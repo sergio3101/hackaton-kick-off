@@ -3,7 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { api } from "../api/client";
-import type { BankQuestion, Level, RequirementsDetailOut } from "../api/types";
+import Breadcrumbs from "../components/Breadcrumbs";
+import type { BankQuestion, Level, RequirementsDetailOut, SessionOut } from "../api/types";
 
 const LEVELS: Level[] = ["junior", "middle", "senior"];
 
@@ -14,11 +15,20 @@ export default function RequirementsDetail() {
   const navigate = useNavigate();
   const [editing, setEditing] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
+  const [editingSummary, setEditingSummary] = useState(false);
+  const [summaryDraft, setSummaryDraft] = useState("");
 
   const { data, isLoading } = useQuery({
     queryKey: ["requirements", reqId],
     queryFn: async () =>
       (await api.get<RequirementsDetailOut>(`/api/requirements/${reqId}`)).data,
+    enabled: Number.isFinite(reqId),
+  });
+
+  const sessionsQ = useQuery({
+    queryKey: ["sessions", "by-req", reqId],
+    queryFn: async () =>
+      (await api.get<SessionOut[]>(`/api/sessions?requirements_id=${reqId}`)).data,
     enabled: Number.isFinite(reqId),
   });
 
@@ -32,9 +42,21 @@ export default function RequirementsDetail() {
     },
   });
 
+  const summaryMut = useMutation({
+    mutationFn: async (summary: string) =>
+      (await api.patch<RequirementsDetailOut>(`/api/requirements/${reqId}`, { summary })).data,
+    onSuccess: (d) => {
+      qc.setQueryData(["requirements", reqId], d);
+      qc.invalidateQueries({ queryKey: ["requirements"] });
+      setEditingSummary(false);
+    },
+  });
+
   const regenerateMut = useMutation({
-    mutationFn: async () =>
-      (await api.post<RequirementsDetailOut>(`/api/requirements/${reqId}/regenerate`)).data,
+    mutationFn: async (questionsPerPair: number) =>
+      (await api.post<RequirementsDetailOut>(`/api/requirements/${reqId}/regenerate`, {
+        questions_per_pair: questionsPerPair,
+      })).data,
     onSuccess: (d) => {
       qc.setQueryData(["requirements", reqId], d);
     },
@@ -46,7 +68,7 @@ export default function RequirementsDetail() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["requirements"] });
-      navigate("/");
+      navigate("/projects");
     },
   });
 
@@ -62,10 +84,28 @@ export default function RequirementsDetail() {
     return map;
   }, [data?.bank]);
 
+  // Целевое число вопросов на пару — оцениваем по существующему банку
+  // (max counts across topics × levels). Если банк пуст — fallback на 5.
+  const expectedPerPair = useMemo(() => {
+    let max = 0;
+    for (const byLevel of grouped.values()) {
+      for (const arr of byLevel.values()) {
+        if (arr.length > max) max = arr.length;
+      }
+    }
+    return max > 0 ? max : 5;
+  }, [grouped]);
+
   if (isLoading || !data) return <div className="text-slate-500">Загрузка...</div>;
 
   return (
     <div className="space-y-6">
+      <Breadcrumbs
+        items={[
+          { label: "Проекты", to: "/projects" },
+          { label: data.title },
+        ]}
+      />
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
           {editing ? (
@@ -128,9 +168,17 @@ export default function RequirementsDetail() {
           <button
             type="button"
             onClick={() => {
-              if (confirm("Перегенерировать банк вопросов? Существующие будут заменены.")) {
-                regenerateMut.mutate();
+              const raw = prompt(
+                "Сколько вопросов на пару тема × уровень? (1–10)\nСуществующий банк будет заменён.",
+                "5",
+              );
+              if (raw === null) return;  // отмена
+              const n = Number(raw);
+              if (!Number.isFinite(n) || n < 1 || n > 10) {
+                alert("Введите целое число от 1 до 10");
+                return;
               }
+              regenerateMut.mutate(Math.round(n));
             }}
             disabled={regenerateMut.isPending}
             className="border border-slate-300 hover:border-slate-400 px-3 py-1.5 rounded-lg text-sm disabled:opacity-50"
@@ -162,14 +210,129 @@ export default function RequirementsDetail() {
         </div>
       )}
 
-      {data.summary && (
-        <section className="bg-white rounded-xl border p-5">
-          <h2 className="font-semibold mb-2">Описание проекта</h2>
+      <section className="bg-white rounded-xl border p-5">
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="font-semibold">Описание проекта</h2>
+          {!editingSummary && (
+            <button
+              type="button"
+              onClick={() => {
+                setSummaryDraft(data.summary || "");
+                setEditingSummary(true);
+              }}
+              className="text-xs text-slate-500 hover:text-slate-800 underline"
+            >
+              {data.summary ? "редактировать" : "добавить"}
+            </button>
+          )}
+        </div>
+        {editingSummary ? (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              summaryMut.mutate(summaryDraft);
+            }}
+            className="space-y-2"
+          >
+            <textarea
+              autoFocus
+              value={summaryDraft}
+              onChange={(e) => setSummaryDraft(e.target.value)}
+              rows={8}
+              maxLength={10000}
+              className="w-full text-sm border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-brand resize-y leading-relaxed"
+              placeholder="Краткое описание проекта — задача, стек, ключевые компоненты..."
+            />
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs text-slate-400">
+                {summaryDraft.length} / 10000 символов
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingSummary(false)}
+                  className="border border-slate-300 px-3 py-1.5 rounded-lg text-sm"
+                >
+                  Отмена
+                </button>
+                <button
+                  type="submit"
+                  disabled={summaryMut.isPending}
+                  className="bg-brand hover:bg-brand-dark text-white px-3 py-1.5 rounded-lg text-sm disabled:opacity-50"
+                >
+                  {summaryMut.isPending ? "Сохраняю..." : "Сохранить"}
+                </button>
+              </div>
+            </div>
+            {summaryMut.isError && (
+              <div className="text-rose-600 text-sm">Не удалось сохранить — попробуйте ещё раз.</div>
+            )}
+          </form>
+        ) : data.summary ? (
           <p className="text-slate-700 text-sm leading-relaxed whitespace-pre-line">
             {data.summary}
           </p>
-        </section>
-      )}
+        ) : (
+          <p className="text-sm text-slate-400 italic">
+            Описание не задано.
+          </p>
+        )}
+      </section>
+
+      <section className="bg-white rounded-xl border p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-semibold">
+            Прошлые сессии по проекту ({sessionsQ.data?.length ?? 0})
+          </h2>
+          <Link
+            to={`/requirements/${reqId}/new-session`}
+            className="text-sm bg-brand hover:bg-brand-dark text-white px-3 py-1.5 rounded-lg"
+          >
+            Создать новую сессию
+          </Link>
+        </div>
+        {sessionsQ.isLoading && <div className="text-sm text-slate-500">Загрузка...</div>}
+        {!sessionsQ.isLoading && (sessionsQ.data?.length ?? 0) === 0 && (
+          <div className="text-sm text-slate-500">
+            По этому проекту ещё не было сессий.
+          </div>
+        )}
+        {(sessionsQ.data?.length ?? 0) > 0 && (
+          <div className="space-y-2">
+            {sessionsQ.data?.map((s) => (
+              <Link
+                key={s.id}
+                to={
+                  s.status === "finished"
+                    ? `/sessions/${s.id}/report`
+                    : `/sessions/${s.id}/interview`
+                }
+                className="flex items-center justify-between border rounded-lg px-3 py-2 hover:border-brand transition-colors"
+              >
+                <div>
+                  <div className="text-sm font-medium">
+                    Сессия #{s.id} • {s.selected_level}
+                  </div>
+                  <div className="text-xs text-slate-500 mt-0.5">
+                    {new Date(s.created_at).toLocaleString("ru-RU")} • {s.mode === "text" ? "текст" : "голос"}
+                  </div>
+                </div>
+                <span
+                  className={`text-xs px-2 py-1 rounded ${
+                    s.status === "finished"
+                      ? "bg-emerald-100 text-emerald-800"
+                      : s.status === "active"
+                      ? "bg-amber-100 text-amber-800"
+                      : "bg-slate-100 text-slate-600"
+                  }`}
+                >
+                  {s.status === "finished" ? "Завершено" : s.status === "active" ? "В процессе" : "Черновик"}
+                </span>
+              </Link>
+            ))}
+          </div>
+        )}
+      </section>
 
       <section className="bg-white rounded-xl border p-5">
         <h2 className="font-semibold mb-3">Темы ({data.topics.length})</h2>
@@ -193,7 +356,7 @@ export default function RequirementsDetail() {
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-semibold">Банк вопросов ({data.bank.length})</h2>
           <div className="text-xs text-slate-500">
-            ожидается ~{data.topics.length * 3 * 5} (5 на пару тема × уровень)
+            ожидается ~{data.topics.length * 3 * expectedPerPair} ({expectedPerPair} на пару тема × уровень)
           </div>
         </div>
 
@@ -220,14 +383,14 @@ export default function RequirementsDetail() {
                             <span>{lvl}</span>
                             <span
                               className={`text-[10px] px-1.5 py-0.5 rounded ${
-                                items.length >= 5
+                                items.length >= expectedPerPair
                                   ? "bg-emerald-100 text-emerald-800"
                                   : items.length > 0
                                   ? "bg-amber-100 text-amber-800"
                                   : "bg-rose-100 text-rose-800"
                               }`}
                             >
-                              {items.length}/5
+                              {items.length}/{expectedPerPair}
                             </span>
                           </div>
                           {items.length === 0 ? (

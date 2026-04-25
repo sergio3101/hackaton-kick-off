@@ -66,4 +66,20 @@ def get_current_user(
     user = db.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+    if not user.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is disabled")
     return user
+
+
+def require_admin(user: User = Depends(get_current_user)) -> User:
+    from app.models import UserRole
+
+    if user.role != UserRole.admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin role required")
+    return user
+
+
+def is_admin(user: User) -> bool:
+    from app.models import UserRole
+
+    return user.role == UserRole.admin

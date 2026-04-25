@@ -3,7 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { api } from "../api/client";
-import type { Level, RequirementsDetailOut, SessionDetailOut } from "../api/types";
+import Breadcrumbs from "../components/Breadcrumbs";
+import type { Level, RequirementsDetailOut, SessionDetailOut, SessionMode } from "../api/types";
 
 const LEVELS: Level[] = ["junior", "middle", "senior"];
 
@@ -13,6 +14,9 @@ export default function NewSession() {
   const navigate = useNavigate();
   const [selectedTopics, setSelectedTopics] = useState<Set<string>>(new Set());
   const [level, setLevel] = useState<Level>("middle");
+  const [mode, setMode] = useState<SessionMode>("voice");
+  const [duration, setDuration] = useState<number>(12);
+  const [continuous, setContinuous] = useState<boolean>(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -56,8 +60,13 @@ export default function NewSession() {
         requirements_id: reqId,
         selected_topics: Array.from(selectedTopics),
         selected_level: level,
+        mode,
+        target_duration_min: duration,
       });
-      navigate(`/sessions/${r.data.id}/interview`);
+      const url = `/sessions/${r.data.id}/interview${
+        mode === "voice" && continuous ? "?continuous=1" : ""
+      }`;
+      navigate(url);
     } catch (e: any) {
       setError(e?.response?.data?.detail || "Не удалось создать сессию");
     } finally {
@@ -69,6 +78,13 @@ export default function NewSession() {
 
   return (
     <div className="space-y-6">
+      <Breadcrumbs
+        items={[
+          { label: "Проекты", to: "/projects" },
+          { label: data.title, to: `/requirements/${reqId}` },
+          { label: "Новая сессия" },
+        ]}
+      />
       <div>
         <h1 className="text-2xl font-semibold">{data.title}</h1>
         <p className="text-slate-600 mt-2 leading-relaxed">{data.summary}</p>
@@ -125,6 +141,73 @@ export default function NewSession() {
               <span className="capitalize font-medium">{l}</span>
             </label>
           ))}
+        </div>
+      </section>
+
+      <section className="bg-white border rounded-xl p-5">
+        <h2 className="font-semibold mb-3">Формат интервью</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <label
+            className={`border rounded-lg p-3 cursor-pointer ${
+              mode === "voice" ? "border-brand bg-indigo-50" : "border-slate-200"
+            }`}
+          >
+            <input
+              type="radio"
+              className="hidden"
+              checked={mode === "voice"}
+              onChange={() => setMode("voice")}
+            />
+            <div className="font-medium">🎙 Голосовое</div>
+            <div className="text-xs text-slate-500 mt-1">
+              ИИ задаёт вопросы голосом, кандидат отвечает в микрофон. STT + TTS.
+            </div>
+          </label>
+          <label
+            className={`border rounded-lg p-3 cursor-pointer ${
+              mode === "text" ? "border-brand bg-indigo-50" : "border-slate-200"
+            }`}
+          >
+            <input
+              type="radio"
+              className="hidden"
+              checked={mode === "text"}
+              onChange={() => setMode("text")}
+            />
+            <div className="font-medium">⌨ Текстовое</div>
+            <div className="text-xs text-slate-500 mt-1">
+              Все вопросы и ответы в текстовом редакторе. Без TTS / STT.
+            </div>
+          </label>
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-4">
+          <label className="text-sm flex items-center gap-2">
+            <span className="text-slate-600">Длительность:</span>
+            <select
+              value={duration}
+              onChange={(e) => setDuration(Number(e.target.value))}
+              className="border rounded-lg px-2 py-1"
+            >
+              <option value={10}>10 мин</option>
+              <option value={12}>12 мин</option>
+              <option value={15}>15 мин</option>
+              <option value={20}>20 мин</option>
+            </select>
+          </label>
+          {mode === "voice" && (
+            <label className="text-sm flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={continuous}
+                onChange={(e) => setContinuous(e.target.checked)}
+              />
+              <span>Непрерывный режим</span>
+              <span className="text-xs text-slate-400">
+                (запись стартует автоматически после оценки)
+              </span>
+            </label>
+          )}
         </div>
       </section>
 

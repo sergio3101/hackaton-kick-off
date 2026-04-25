@@ -1,12 +1,14 @@
-import json
 import logging
 from dataclasses import dataclass
 
+from sqlalchemy.orm import Session
+
 from app.config import get_settings
-from app.llm.client import get_openai
+from app.llm.client import get_openai, safe_json_loads
+from app.llm.cost_tracker import record_chat_usage
 from app.llm.prompts import (
     EXTRACT_JSON_SCHEMA,
-    EXTRACT_SYSTEM,
+    EXTRACT_SYSTEM_TEMPLATE,
     TOPIC_QUESTIONS_JSON_SCHEMA,
     TOPIC_QUESTIONS_SYSTEM,
 )
@@ -38,21 +40,34 @@ class ExtractionResult:
     questions: list[ExtractedQuestion]
 
 
-def extract_requirements(raw_text: str) -> ExtractionResult:
+def extract_requirements(
+    raw_text: str,
+    *,
+    requirements_id: int | None = None,
+    db: Session | None = None,
+    questions_per_pair: int = QUESTIONS_PER_PAIR,
+) -> ExtractionResult:
     settings = get_settings()
     client = get_openai()
 
-    logger.info("extract_requirements: raw_len=%d", len(raw_text))
+    n = max(1, min(int(questions_per_pair), 10))
+    system_prompt = EXTRACT_SYSTEM_TEMPLATE.format(n=n, total_for_4=4 * 3 * n)
+
+    logger.info("extract_requirements: raw_len=%d, n_per_pair=%d", len(raw_text), n)
     response = client.chat.completions.create(
         model=settings.openai_chat_model,
         messages=[
-            {"role": "system", "content": EXTRACT_SYSTEM},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": raw_text[:120_000]},
         ],
         response_format={"type": "json_schema", "json_schema": EXTRACT_JSON_SCHEMA},
         temperature=0.4,
     )
-    payload = json.loads(response.choices[0].message.content or "{}")
+    record_chat_usage(
+        kind="extract", model=settings.openai_chat_model,
+        response=response, requirements_id=requirements_id, db=db,
+    )
+    payload = safe_json_loads(response.choices[0].message.content, kind="extract")
 
     topics = [ExtractedTopic(name=t["name"], description=t.get("description", ""))
               for t in payload.get("topics", [])]
@@ -82,6 +97,9 @@ def generate_questions_for_pair(
     topic: ExtractedTopic,
     level: str,
     count: int,
+    *,
+    requirements_id: int | None = None,
+    db: Session | None = None,
 ) -> list[ExtractedQuestion]:
     """Догенерация вопросов для конкретной пары (тема × уровень).
 
@@ -109,7 +127,11 @@ def generate_questions_for_pair(
         response_format={"type": "json_schema", "json_schema": TOPIC_QUESTIONS_JSON_SCHEMA},
         temperature=0.5,
     )
-    payload = json.loads(response.choices[0].message.content or "{}")
+    record_chat_usage(
+        kind="topic_questions", model=settings.openai_chat_model,
+        response=response, requirements_id=requirements_id, db=db,
+    )
+    payload = safe_json_loads(response.choices[0].message.content, kind="extract")
     items = payload.get("questions", []) or []
     return [
         ExtractedQuestion(
@@ -129,6 +151,8 @@ def ensure_full_bank(
     questions: list[ExtractedQuestion],
     *,
     target: int = QUESTIONS_PER_PAIR,
+    requirements_id: int | None = None,
+    db: Session | None = None,
 ) -> list[ExtractedQuestion]:
     """Гарантирует, что для каждой пары (topic.name, level) набрано >= target вопросов.
 
@@ -153,7 +177,11 @@ def ensure_full_bank(
                     topic.name, level, len(existing), target,
                 )
                 try:
-                    extra = generate_questions_for_pair(summary, topic, level, missing)
+                    extra = generate_questions_for_pair(
+                        summary, topic, level, missing,
+                        requirements_id=requirements_id,
+                        db=db,
+                    )
                 except Exception:
                     logger.exception("Добор вопросов упал для %r/%s", topic.name, level)
                     extra = []

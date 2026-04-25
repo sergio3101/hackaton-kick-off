@@ -9,6 +9,7 @@ export default function Upload() {
   const [files, setFiles] = useState<File[]>([]);
   const [text, setText] = useState("");
   const [title, setTitle] = useState("");
+  const [questionsPerPair, setQuestionsPerPair] = useState<number>(5);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -24,6 +25,7 @@ export default function Upload() {
       const fd = new FormData();
       if (title.trim()) fd.append("title", title.trim());
       if (text.trim()) fd.append("text", text);
+      fd.append("questions_per_pair", String(questionsPerPair));
       files.forEach((f) => fd.append("files", f));
       const r = await api.post<RequirementsDetailOut>("/api/requirements", fd, {
         headers: { "Content-Type": "multipart/form-data" },
@@ -83,6 +85,31 @@ export default function Upload() {
             placeholder="Описание проекта в формате Markdown..."
             className="w-full px-3 py-2 border rounded-lg font-mono text-sm"
           />
+        </div>
+
+        <div>
+          <label className="block text-sm text-slate-600 mb-1">
+            Вопросов на пару тема × уровень
+          </label>
+          <div className="flex items-center gap-3">
+            <input
+              type="number"
+              min={1}
+              max={10}
+              value={questionsPerPair}
+              onChange={(e) => {
+                const n = Number(e.target.value);
+                if (Number.isFinite(n)) setQuestionsPerPair(Math.max(1, Math.min(10, n)));
+              }}
+              className="w-20 px-3 py-2 border rounded-lg text-center"
+            />
+            <span className="text-xs text-slate-500">
+              По умолчанию 5. Диапазон 1–10. На каждую тему сгенерируется
+              {" "}
+              <strong>{questionsPerPair * 3}</strong> вопросов (junior + middle + senior).
+              Больше вопросов = дольше генерация и больше токенов.
+            </span>
+          </div>
         </div>
 
         {error && <div className="text-rose-600 text-sm">{error}</div>}

@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 
 import { api } from "../api/client";
+import { useAuth } from "../auth/AuthProvider";
 import type { SessionOut } from "../api/types";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -10,7 +11,9 @@ const STATUS_LABEL: Record<string, string> = {
   finished: "Завершено",
 };
 
-export default function History() {
+export default function Sessions() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const { data, isLoading } = useQuery({
     queryKey: ["sessions"],
     queryFn: async () => (await api.get<SessionOut[]>("/api/sessions")).data,
@@ -18,16 +21,27 @@ export default function History() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold">История сессий</h1>
+      <h1 className="text-2xl font-semibold">{isAdmin ? "Сессии" : "Мои отчёты"}</h1>
 
       {isLoading && <div className="text-slate-500">Загрузка...</div>}
 
       {!isLoading && (data?.length ?? 0) === 0 && (
         <div className="bg-white p-10 rounded-xl border text-center text-slate-500">
-          Пока нет ни одной сессии.{" "}
-          <Link to="/upload" className="text-brand hover:underline">
-            Загрузить требования и начать
-          </Link>
+          {isAdmin ? (
+            <>
+              Пока нет ни одной сессии.{" "}
+              <Link to="/upload" className="text-brand hover:underline">
+                Загрузить требования и начать
+              </Link>
+            </>
+          ) : (
+            <>
+              Опубликованных отчётов пока нет.{" "}
+              <Link to="/me/assignments" className="text-brand hover:underline">
+                Перейти к моим кикоффам
+              </Link>
+            </>
+          )}
         </div>
       )}
 

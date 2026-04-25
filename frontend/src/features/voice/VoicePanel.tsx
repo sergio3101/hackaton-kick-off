@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 import { useVoiceSession } from "./useVoiceSession";
 
@@ -6,6 +6,8 @@ interface Props {
   sessionId: number;
   totalVoice: number;
   autoConnect?: boolean;
+  continuous?: boolean;  // F1: автозапуск записи после получения вопроса
+  textMode?: boolean;    // F3: текстовый режим всей сессии — скрываем микрофон
 }
 
 const PHASE_LABEL: Record<string, string> = {
@@ -26,18 +28,58 @@ const PHASE_COLOR: Record<string, string> = {
   error: "bg-rose-500",
 };
 
-export default function VoicePanel({ sessionId, totalVoice, autoConnect = true }: Props) {
+const PHASE_COLOR_TIME_UP = "bg-rose-500";
+
+export default function VoicePanel({
+  sessionId,
+  totalVoice,
+  autoConnect = true,
+  continuous = false,
+  textMode: forceTextMode = false,
+}: Props) {
   const v = useVoiceSession(sessionId);
+  const [textMode, setTextMode] = useState(forceTextMode);
+  const [textDraft, setTextDraft] = useState("");
 
   useEffect(() => {
     if (autoConnect) v.connect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoConnect]);
 
+  // Сбрасываем черновик при смене вопроса; в text-only режиме textMode не закрываем.
+  useEffect(() => {
+    setTextDraft("");
+    if (!forceTextMode) setTextMode(false);
+  }, [v.current?.itemId, forceTextMode]);
+
+  // F3: в режиме «текстовое интервью» — постоянно держим textMode=true.
+  useEffect(() => {
+    if (forceTextMode) setTextMode(true);
+  }, [forceTextMode]);
+
+  // При завершении сессии (time_up или completed) — закрыть текстовый режим.
+  useEffect(() => {
+    if (v.phase === "done") {
+      if (!forceTextMode) setTextMode(false);
+      setTextDraft("");
+    }
+  }, [v.phase, forceTextMode]);
+
+  // F1: непрерывный режим — автостарт записи после получения нового вопроса.
+  useEffect(() => {
+    if (!continuous || forceTextMode) return;
+    if (v.phase === "listening" && !v.recording && v.segments === 0) {
+      void v.startRecording();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [continuous, forceTextMode, v.phase, v.current?.itemId]);
+
   const completed = v.log.filter((l) => l.verdict !== null && !l.isFollowUp).length;
-  const canRecord = v.phase === "listening" || v.recording;
-  const canSubmit = v.phase === "listening" && (v.recording || v.segments > 0);
-  const canDiscard = v.phase === "listening" && !v.recording && v.segments > 0;
+  const canRecord = (v.phase === "listening" || v.recording) && !textMode;
+  const canSubmit = v.phase === "listening" && (v.recording || v.segments > 0) && !textMode;
+  const canDiscard = v.phase === "listening" && !v.recording && v.segments > 0 && !textMode;
+  const canText = v.phase === "listening" && !v.recording;
+  const canSkip = !!v.current && !v.recording && v.phase !== "thinking";
 
   let micHelp = "";
   if (v.recording) {
@@ -52,22 +94,32 @@ export default function VoicePanel({ sessionId, totalVoice, autoConnect = true }
     micHelp = "Подождите...";
   }
 
+  const isTimeUp = v.phase === "done" && v.doneReason === "time_up";
+  const phaseLabel = isTimeUp
+    ? `Время вышло (отвечено ${completed} из ${totalVoice})`
+    : PHASE_LABEL[v.phase] || v.phase;
+  const phaseDot = isTimeUp
+    ? PHASE_COLOR_TIME_UP
+    : PHASE_COLOR[v.phase] || "bg-slate-300";
+
   return (
     <div className="flex flex-col h-full bg-white border rounded-lg">
       <div className="border-b p-4">
         <div className="flex items-center justify-between">
-          <h3 className="font-semibold">Голосовое интервью</h3>
+          <h3 className="font-semibold">
+            {forceTextMode ? "Текстовое интервью" : "Голосовое интервью"}
+          </h3>
           <span className="text-xs text-slate-500">
             {completed}/{totalVoice}
           </span>
         </div>
         <div className="flex items-center gap-2 mt-2">
           <span
-            className={`inline-block w-2 h-2 rounded-full ${PHASE_COLOR[v.phase] || "bg-slate-300"} ${
+            className={`inline-block w-2 h-2 rounded-full ${phaseDot} ${
               v.phase === "speaking" || v.phase === "thinking" ? "animate-pulse" : ""
             }`}
           />
-          <span className="text-xs text-slate-600">{PHASE_LABEL[v.phase] || v.phase}</span>
+          <span className="text-xs text-slate-600">{phaseLabel}</span>
         </div>
       </div>
 
@@ -82,10 +134,28 @@ export default function VoicePanel({ sessionId, totalVoice, autoConnect = true }
           </>
         ) : (
           <div className="text-slate-400 text-sm">
-            {v.phase === "done" ? "Все вопросы заданы" : "Ожидание вопроса..."}
+            {v.phase === "done"
+              ? v.doneReason === "time_up"
+                ? "Время вышло — нажмите «Завершить досрочно», чтобы получить отчёт"
+                : "Все вопросы заданы"
+              : "Ожидание вопроса..."}
           </div>
         )}
       </div>
+
+      {v.timeWarningRemainingSec !== null && v.phase !== "done" && (
+        <div className="mx-4 mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          ⏱ Осталось ~{Math.ceil((v.timeWarningRemainingSec || 0) / 60)} мин — постарайтесь
+          закончить текущий вопрос.
+        </div>
+      )}
+
+      {v.reconnecting && (
+        <div className="mx-4 mt-3 rounded-lg border border-sky-300 bg-sky-50 p-3 text-sm text-sky-900 flex items-center gap-2">
+          <span className="inline-block w-2 h-2 rounded-full bg-sky-500 animate-pulse" />
+          Восстанавливаем соединение...
+        </div>
+      )}
 
       {v.error && (
         <div className="mx-4 mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3 flex items-start gap-3">
@@ -100,6 +170,7 @@ export default function VoicePanel({ sessionId, totalVoice, autoConnect = true }
         </div>
       )}
 
+      {v.phase !== "done" && !forceTextMode && (
       <div className="p-4 border-b flex flex-col items-center gap-3">
         <button
           type="button"
@@ -120,8 +191,10 @@ export default function VoicePanel({ sessionId, totalVoice, autoConnect = true }
           )}
           <MicIcon muted={!v.recording && !canRecord} />
         </button>
-        <div className="text-xs text-slate-600 text-center min-h-[16px] px-2">{micHelp}</div>
-        <div className="flex items-center gap-2">
+        <div className="text-xs text-slate-600 text-center min-h-[16px] px-2">
+          {textMode ? "Печатайте ответ ниже — голос на паузе" : micHelp}
+        </div>
+        <div className="flex items-center gap-2 flex-wrap justify-center">
           <button
             type="button"
             onClick={v.submitAnswer}
@@ -138,16 +211,98 @@ export default function VoicePanel({ sessionId, totalVoice, autoConnect = true }
           >
             Очистить
           </button>
+          <button
+            type="button"
+            onClick={() => setTextMode((m) => !m)}
+            disabled={!canText && !textMode}
+            title="Если вопрос требует кода или хочется ответить письменно"
+            aria-pressed={textMode}
+            className={`px-3 py-2 rounded-lg text-sm border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+              textMode
+                ? "bg-slate-900 border-slate-900 text-white hover:bg-slate-800"
+                : "border-slate-300 hover:border-slate-400 text-slate-700"
+            }`}
+          >
+            {textMode ? "Закрыть редактор" : "Ответить текстом / кодом"}
+          </button>
+          <button
+            type="button"
+            onClick={v.replay}
+            disabled={!v.current || v.recording || v.phase === "thinking"}
+            title="Повторить текущий вопрос голосом"
+            className="border border-slate-300 hover:border-slate-400 text-slate-700 px-3 py-2 rounded-lg text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            🔁 Повторить
+          </button>
         </div>
         <button
           type="button"
           onClick={v.skip}
-          disabled={!v.current || v.recording}
-          className="text-xs text-slate-500 hover:text-slate-700 underline disabled:opacity-40 disabled:no-underline"
+          disabled={!canSkip}
+          className="text-sm text-slate-600 hover:text-slate-900 px-3 py-1.5 rounded-lg border border-dashed border-slate-300 hover:border-slate-400 disabled:opacity-40 disabled:cursor-not-allowed"
+          title="Пропустить вопрос и перейти к следующему"
         >
-          Пропустить вопрос
+          К следующему вопросу →
         </button>
       </div>
+      )}
+
+      {forceTextMode && v.phase !== "done" && (
+        <div className="px-4 pt-3 pb-1 text-xs text-slate-500 border-b">
+          Это текстовое интервью — голос отключён. Пишите ответ ниже и нажимайте «Отправить».
+        </div>
+      )}
+
+      {textMode && (
+        <div className="p-4 border-b bg-slate-50 space-y-2">
+          <div className="text-xs text-slate-500">
+            Текстовый ответ — голос будет проигнорирован. Подходит для вопросов с кодом.
+          </div>
+          <textarea
+            value={textDraft}
+            onChange={(e) => setTextDraft(e.target.value)}
+            placeholder="Напишите ответ или код..."
+            rows={6}
+            className="w-full font-mono text-sm bg-white border border-slate-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-brand resize-y"
+            disabled={v.phase === "thinking"}
+          />
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs text-slate-400">{textDraft.trim().length} символов</span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setTextDraft("")}
+                disabled={!textDraft || v.phase === "thinking"}
+                className="text-xs text-slate-500 hover:text-slate-800 px-2 py-1 disabled:opacity-40"
+              >
+                Очистить
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void v.submitTextAnswer(textDraft).then(() => setTextDraft(""));
+                }}
+                disabled={textDraft.trim().length < 5 || v.phase === "thinking"}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Отправить текстом
+              </button>
+            </div>
+          </div>
+          {forceTextMode && v.phase !== "done" && (
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={v.skip}
+                disabled={!canSkip}
+                className="text-sm text-slate-600 hover:text-slate-900 px-3 py-1.5 rounded-lg border border-dashed border-slate-300 hover:border-slate-400 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                К следующему вопросу →
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
         {v.log.map((entry, idx) => (
