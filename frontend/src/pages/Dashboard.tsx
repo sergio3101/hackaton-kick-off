@@ -43,12 +43,20 @@ export default function Dashboard() {
                   {new Date(r.created_at).toLocaleString("ru-RU")}
                 </div>
               </div>
-              <Link
-                to={`/requirements/${r.id}/new-session`}
-                className="bg-brand hover:bg-brand-dark text-white px-3 py-1.5 rounded-lg text-sm"
-              >
-                Начать интервью
-              </Link>
+              <div className="flex items-center gap-2">
+                <Link
+                  to={`/requirements/${r.id}`}
+                  className="border border-slate-300 hover:border-slate-400 text-slate-700 px-3 py-1.5 rounded-lg text-sm"
+                >
+                  Открыть
+                </Link>
+                <Link
+                  to={`/requirements/${r.id}/new-session`}
+                  className="bg-brand hover:bg-brand-dark text-white px-3 py-1.5 rounded-lg text-sm"
+                >
+                  Начать интервью
+                </Link>
+              </div>
             </div>
             {r.summary && (
               <p className="text-slate-700 text-sm mt-3 leading-relaxed">{r.summary}</p>

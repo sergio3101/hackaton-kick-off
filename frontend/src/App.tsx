@@ -9,6 +9,7 @@ import Login from "./pages/Login";
 import NewSession from "./pages/NewSession";
 import Register from "./pages/Register";
 import Report from "./pages/Report";
+import RequirementsDetail from "./pages/RequirementsDetail";
 import Upload from "./pages/Upload";
 
 function Private({ children }: { children: JSX.Element }) {
@@ -32,6 +33,7 @@ export default function App() {
       >
         <Route path="/" element={<Dashboard />} />
         <Route path="/upload" element={<Upload />} />
+        <Route path="/requirements/:id" element={<RequirementsDetail />} />
         <Route path="/requirements/:id/new-session" element={<NewSession />} />
         <Route path="/sessions/:id/interview" element={<Interview />} />
         <Route path="/sessions/:id/report" element={<Report />} />

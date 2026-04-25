@@ -1,10 +1,15 @@
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
+from app.logging_setup import setup_logging
 from app.routers import auth, interview_ws, requirements, sessions
 
 settings = get_settings()
+setup_logging(settings.log_level)
+logger = logging.getLogger("app")
 
 app = FastAPI(title="Kick-off Prep Service", version="0.1.0")
 
@@ -25,3 +30,6 @@ app.include_router(interview_ws.router)
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+logger.info("App started, cors=%s", settings.cors_origins)

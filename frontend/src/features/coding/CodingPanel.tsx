@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Editor from "@monaco-editor/react";
 
 import { api } from "../../api/client";
@@ -17,48 +17,152 @@ const STARTER: Record<string, string> = {
   java: "public class Solution {\n  public static void main(String[] args) {\n  }\n}\n",
 };
 
+interface TaskResult {
+  verdict: string;
+  rationale: string;
+}
+
 export default function CodingPanel({ session, onSubmitted }: Props) {
-  const codingItem = session.items.find((i) => i.type === "coding");
   const lang = (session.coding_task_language || "python").toLowerCase();
-  const [code, setCode] = useState<string>(codingItem?.answer_text || STARTER[lang] || "");
-  const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<{ verdict: string; rationale: string } | null>(
-    codingItem && codingItem.verdict
-      ? { verdict: codingItem.verdict, rationale: codingItem.rationale }
-      : null,
+  const codingItems = useMemo(
+    () =>
+      session.items
+        .filter((i) => i.type === "coding")
+        .sort((a, b) => a.idx - b.idx),
+    [session.items],
   );
-  const [error, setError] = useState<string | null>(null);
+
+  const [activeId, setActiveId] = useState<number | null>(codingItems[0]?.id ?? null);
+  const [codeById, setCodeById] = useState<Record<number, string>>(() => {
+    const init: Record<number, string> = {};
+    for (const it of codingItems) {
+      init[it.id] = it.answer_text || STARTER[lang] || "";
+    }
+    return init;
+  });
+  const [resultById, setResultById] = useState<Record<number, TaskResult>>(() => {
+    const init: Record<number, TaskResult> = {};
+    for (const it of codingItems) {
+      if (it.verdict) init[it.id] = { verdict: it.verdict, rationale: it.rationale };
+    }
+    return init;
+  });
+  const [busyId, setBusyId] = useState<number | null>(null);
+  const [errorById, setErrorById] = useState<Record<number, string>>({});
 
   useEffect(() => {
-    if (codingItem?.answer_text) setCode(codingItem.answer_text);
-  }, [codingItem?.answer_text]);
+    if (activeId === null && codingItems.length > 0) {
+      setActiveId(codingItems[0].id);
+    }
+  }, [codingItems, activeId]);
+
+  useEffect(() => {
+    setCodeById((prev) => {
+      const next = { ...prev };
+      for (const it of codingItems) {
+        if (next[it.id] === undefined) {
+          next[it.id] = it.answer_text || STARTER[lang] || "";
+        }
+      }
+      return next;
+    });
+  }, [codingItems, lang]);
+
+  const active = codingItems.find((i) => i.id === activeId) ?? null;
 
   async function onSubmit() {
-    setBusy(true);
-    setError(null);
+    if (!active) return;
+    setBusyId(active.id);
+    setErrorById((e) => ({ ...e, [active.id]: "" }));
     try {
-      const r = await api.post<SessionItem>(`/api/sessions/${session.id}/coding/review`, { code });
-      setResult({ verdict: r.data.verdict || "incorrect", rationale: r.data.rationale });
+      const r = await api.post<SessionItem>(
+        `/api/sessions/${session.id}/coding/review/${active.id}`,
+        { code: codeById[active.id] ?? "" },
+      );
+      setResultById((prev) => ({
+        ...prev,
+        [active.id]: { verdict: r.data.verdict || "incorrect", rationale: r.data.rationale },
+      }));
       onSubmitted?.(r.data);
     } catch (e: any) {
-      setError(e?.response?.data?.detail || "Не удалось получить ревью");
+      setErrorById((prev) => ({
+        ...prev,
+        [active.id]: e?.response?.data?.detail || "Не удалось получить ревью",
+      }));
     } finally {
-      setBusy(false);
+      setBusyId(null);
     }
   }
 
+  if (codingItems.length === 0) {
+    return (
+      <div className="flex flex-col h-full bg-white border rounded-lg p-4 text-sm text-slate-500">
+        Кодинг-задачи отсутствуют в сессии.
+      </div>
+    );
+  }
+
+  const activeResult = active ? resultById[active.id] : null;
+  const activeError = active ? errorById[active.id] : "";
+
   return (
     <div className="flex flex-col h-full">
-      <div className="bg-white border rounded-t-lg p-4">
-        <h3 className="font-semibold mb-2">Лайв-кодинг ({lang})</h3>
-        <p className="text-sm text-slate-700 whitespace-pre-wrap">{session.coding_task_prompt}</p>
+      <div className="bg-white border rounded-t-lg">
+        <div className="flex items-center gap-2 border-b px-3 pt-3">
+          {codingItems.map((it, idx) => {
+            const result = resultById[it.id];
+            const isActive = it.id === activeId;
+            return (
+              <button
+                key={it.id}
+                type="button"
+                onClick={() => setActiveId(it.id)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-t-lg border-b-2 -mb-px transition-colors ${
+                  isActive
+                    ? "border-brand text-slate-900 bg-white"
+                    : "border-transparent text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                <span className="text-xs text-slate-400">#{idx + 1}</span>
+                <span className="font-medium">{it.topic}</span>
+                {result && (
+                  <span
+                    className={`ml-1 inline-block w-2 h-2 rounded-full ${
+                      result.verdict === "correct"
+                        ? "bg-emerald-500"
+                        : result.verdict === "partial"
+                        ? "bg-amber-500"
+                        : "bg-rose-500"
+                    }`}
+                    title={result.verdict}
+                  />
+                )}
+              </button>
+            );
+          })}
+        </div>
+        <div className="p-4">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="font-semibold">
+              Лайв-кодинг ({lang})
+              {active && <span className="text-slate-400 font-normal"> — тема: {active.topic}</span>}
+            </h3>
+          </div>
+          {active && (
+            <p className="text-sm text-slate-700 whitespace-pre-wrap">{active.prompt_text}</p>
+          )}
+        </div>
       </div>
+
       <div className="border-x flex-1 min-h-0">
         <Editor
           height="100%"
           language={lang}
-          value={code}
-          onChange={(v) => setCode(v ?? "")}
+          value={active ? codeById[active.id] ?? "" : ""}
+          onChange={(v) => {
+            if (!active) return;
+            setCodeById((prev) => ({ ...prev, [active.id]: v ?? "" }));
+          }}
           theme="vs-dark"
           options={{
             fontSize: 13,
@@ -68,34 +172,35 @@ export default function CodingPanel({ session, onSubmitted }: Props) {
           }}
         />
       </div>
+
       <div className="bg-white border rounded-b-lg p-4 space-y-3">
         <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={onSubmit}
-            disabled={busy}
+            disabled={!active || busyId !== null}
             className="bg-brand hover:bg-brand-dark text-white px-4 py-2 rounded-lg text-sm disabled:opacity-50"
           >
-            {busy ? "Анализ..." : "Отправить решение"}
+            {busyId === active?.id ? "Анализ..." : "Отправить решение"}
           </button>
-          {result && (
+          {activeResult && (
             <span
               className={`text-xs px-2 py-1 rounded ${
-                result.verdict === "correct"
+                activeResult.verdict === "correct"
                   ? "bg-emerald-100 text-emerald-800"
-                  : result.verdict === "partial"
+                  : activeResult.verdict === "partial"
                   ? "bg-amber-100 text-amber-800"
                   : "bg-rose-100 text-rose-800"
               }`}
             >
-              {result.verdict}
+              {activeResult.verdict}
             </span>
           )}
         </div>
-        {error && <div className="text-rose-600 text-sm">{error}</div>}
-        {result?.rationale && (
+        {activeError && <div className="text-rose-600 text-sm">{activeError}</div>}
+        {activeResult?.rationale && (
           <div className="text-sm text-slate-700 bg-slate-50 border rounded p-3 whitespace-pre-wrap">
-            {result.rationale}
+            {activeResult.rationale}
           </div>
         )}
       </div>

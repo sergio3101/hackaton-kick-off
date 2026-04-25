@@ -23,13 +23,23 @@ export interface VoiceLogEntry {
 
 export type VoicePhase = "idle" | "speaking" | "listening" | "thinking" | "done" | "error";
 
+export interface VoiceError {
+  code: string;
+  message: string;
+  recoverable: boolean;
+}
+
 interface State {
   current: VoiceQuestion | null;
   phase: VoicePhase;
   log: VoiceLogEntry[];
-  error: string | null;
+  error: VoiceError | null;
   recording: boolean;
+  segments: number;
 }
+
+const MIN_TOTAL_RECORDING_MS = 600;
+const MIN_TOTAL_BLOB_BYTES = 1500;
 
 function wsUrl(sessionId: number): string {
   const token = getToken() || "";
@@ -56,14 +66,46 @@ export function useVoiceSession(sessionId: number) {
     log: [],
     error: null,
     recording: false,
+    segments: 0,
   });
 
   const wsRef = useRef<WebSocket | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const totalRecordedMsRef = useRef<number>(0);
+  const segmentStartRef = useRef<number>(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const pendingItemRef = useRef<VoiceQuestion | null>(null);
+
+  const resetSegments = useCallback(() => {
+    chunksRef.current = [];
+    totalRecordedMsRef.current = 0;
+    setState((s) => ({ ...s, segments: 0 }));
+  }, []);
+
+  const playAudio = useCallback(async (audioB64: string) => {
+    try {
+      const bytes = Uint8Array.from(atob(audioB64), (c) => c.charCodeAt(0));
+      const blob = new Blob([bytes], { type: "audio/mpeg" });
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      await new Promise<void>((resolve) => {
+        audio.onended = () => {
+          URL.revokeObjectURL(url);
+          resolve();
+        };
+        audio.onerror = () => {
+          URL.revokeObjectURL(url);
+          resolve();
+        };
+        audio.play().catch(() => resolve());
+      });
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   const connect = useCallback(() => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) return;
@@ -87,14 +129,16 @@ export function useVoiceSession(sessionId: number) {
           isFollowUp: !!msg.is_follow_up,
         };
         pendingItemRef.current = q;
-        setState((s) => ({ ...s, current: q, phase: "speaking", error: null }));
+        chunksRef.current = [];
+        totalRecordedMsRef.current = 0;
+        setState((s) => ({ ...s, current: q, phase: "speaking", error: null, segments: 0 }));
         playAudio(msg.audio_b64).then(() => {
           setState((s) => (s.current?.itemId === q.itemId ? { ...s, phase: "listening" } : s));
         });
       } else if (msg.type === "transcript") {
-        setState((s) => ({ ...s, phase: "thinking" }));
         setState((s) => ({
           ...s,
+          phase: "thinking",
           log: [
             ...s.log,
             {
@@ -122,7 +166,17 @@ export function useVoiceSession(sessionId: number) {
       } else if (msg.type === "done") {
         setState((s) => ({ ...s, current: null, phase: "done" }));
       } else if (msg.type === "error") {
-        setState((s) => ({ ...s, phase: "error", error: msg.message }));
+        const recoverable = !!msg.recoverable;
+        const err: VoiceError = {
+          code: msg.code || "error",
+          message: msg.message || "Что-то пошло не так",
+          recoverable,
+        };
+        setState((s) => ({
+          ...s,
+          phase: recoverable ? "listening" : "error",
+          error: err,
+        }));
       }
     };
 
@@ -131,32 +185,13 @@ export function useVoiceSession(sessionId: number) {
     };
 
     ws.onerror = () => {
-      setState((s) => ({ ...s, phase: "error", error: "WebSocket connection error" }));
+      setState((s) => ({
+        ...s,
+        phase: "error",
+        error: { code: "ws_error", message: "Соединение прервано", recoverable: false },
+      }));
     };
-  }, [sessionId]);
-
-  const playAudio = useCallback(async (audioB64: string) => {
-    try {
-      const bytes = Uint8Array.from(atob(audioB64), (c) => c.charCodeAt(0));
-      const blob = new Blob([bytes], { type: "audio/mpeg" });
-      const url = URL.createObjectURL(blob);
-      const audio = new Audio(url);
-      audioRef.current = audio;
-      await new Promise<void>((resolve) => {
-        audio.onended = () => {
-          URL.revokeObjectURL(url);
-          resolve();
-        };
-        audio.onerror = () => {
-          URL.revokeObjectURL(url);
-          resolve();
-        };
-        audio.play().catch(() => resolve());
-      });
-    } catch {
-      /* ignore */
-    }
-  }, []);
+  }, [sessionId, playAudio]);
 
   const ensureMic = useCallback(async (): Promise<MediaStream> => {
     if (mediaStreamRef.current) return mediaStreamRef.current;
@@ -166,44 +201,102 @@ export function useVoiceSession(sessionId: number) {
   }, []);
 
   const startRecording = useCallback(async () => {
-    if (state.phase !== "listening") return;
+    if (state.phase !== "listening" || state.recording) return;
     try {
       const stream = await ensureMic();
       const recorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
-      chunksRef.current = [];
       recorder.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
       };
-      recorder.onstop = async () => {
-        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
-        chunksRef.current = [];
-        if (blob.size === 0) return;
-        const b64 = await blobToBase64(blob);
-        wsRef.current?.send(JSON.stringify({ type: "answer", audio_b64: b64 }));
-        setState((s) => ({ ...s, phase: "thinking", recording: false }));
+      recorder.onstop = () => {
+        const elapsed = Date.now() - segmentStartRef.current;
+        totalRecordedMsRef.current += elapsed;
+        setState((s) => ({ ...s, recording: false, segments: s.segments + 1 }));
       };
+      segmentStartRef.current = Date.now();
       recorder.start();
       recorderRef.current = recorder;
-      setState((s) => ({ ...s, recording: true }));
+      setState((s) => ({ ...s, recording: true, error: null }));
     } catch (e: any) {
-      setState((s) => ({ ...s, error: e?.message || "Не удалось получить доступ к микрофону" }));
+      setState((s) => ({
+        ...s,
+        error: {
+          code: "mic_denied",
+          message: e?.message || "Не удалось получить доступ к микрофону",
+          recoverable: false,
+        },
+      }));
     }
-  }, [ensureMic, state.phase]);
+  }, [ensureMic, state.phase, state.recording]);
 
-  const stopRecording = useCallback(() => {
-    const recorder = recorderRef.current;
-    if (recorder && recorder.state !== "inactive") {
+  const stopRecording = useCallback((): Promise<void> => {
+    return new Promise((resolve) => {
+      const recorder = recorderRef.current;
+      if (!recorder || recorder.state === "inactive") {
+        resolve();
+        return;
+      }
+      const prevOnStop = recorder.onstop;
+      recorder.onstop = (ev) => {
+        if (typeof prevOnStop === "function") prevOnStop.call(recorder, ev);
+        resolve();
+      };
       recorder.stop();
-    }
+    });
   }, []);
+
+  const toggleRecording = useCallback(() => {
+    if (state.recording) {
+      void stopRecording();
+    } else {
+      void startRecording();
+    }
+  }, [state.recording, startRecording, stopRecording]);
+
+  const submitAnswer = useCallback(async () => {
+    if (state.recording) {
+      await stopRecording();
+    }
+    const totalBytes = chunksRef.current.reduce((acc, b) => acc + b.size, 0);
+    const totalMs = totalRecordedMsRef.current;
+    if (totalBytes < MIN_TOTAL_BLOB_BYTES || totalMs < MIN_TOTAL_RECORDING_MS) {
+      setState((s) => ({
+        ...s,
+        error: {
+          code: "audio_too_short",
+          message: "Запись слишком короткая — допишите ещё или начните заново",
+          recoverable: true,
+        },
+      }));
+      return;
+    }
+    const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+    const b64 = await blobToBase64(blob);
+    wsRef.current?.send(JSON.stringify({ type: "answer", audio_b64: b64 }));
+    chunksRef.current = [];
+    totalRecordedMsRef.current = 0;
+    setState((s) => ({ ...s, phase: "thinking", segments: 0, error: null }));
+  }, [state.recording, stopRecording]);
+
+  const discardSegments = useCallback(() => {
+    if (state.recording) return;
+    resetSegments();
+    setState((s) => ({ ...s, error: null }));
+  }, [state.recording, resetSegments]);
 
   const skip = useCallback(() => {
     wsRef.current?.send(JSON.stringify({ type: "skip" }));
-    setState((s) => ({ ...s, phase: "thinking" }));
+    chunksRef.current = [];
+    totalRecordedMsRef.current = 0;
+    setState((s) => ({ ...s, phase: "thinking", error: null, segments: 0 }));
   }, []);
 
   const finish = useCallback(() => {
     wsRef.current?.send(JSON.stringify({ type: "finish" }));
+  }, []);
+
+  const dismissError = useCallback(() => {
+    setState((s) => ({ ...s, error: null }));
   }, []);
 
   useEffect(() => {
@@ -224,7 +317,11 @@ export function useVoiceSession(sessionId: number) {
     connect,
     startRecording,
     stopRecording,
+    toggleRecording,
+    submitAnswer,
+    discardSegments,
     skip,
     finish,
+    dismissError,
   };
 }

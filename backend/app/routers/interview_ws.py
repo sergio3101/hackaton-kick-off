@@ -13,7 +13,10 @@
   {"type": "transcript", "item_id": int, "text": str}
   {"type": "evaluation", "item_id": int, "verdict": str, "rationale": str}
   {"type": "done"}                      — все voice-вопросы пройдены.
-  {"type": "error", "message": str}
+  {"type": "error", "code": str, "message": str, "recoverable": bool}
+       Известные code: audio_too_short, invalid_audio, stt_failed, eval_failed.
+       recoverable=True означает, что текущий вопрос не сменился — клиент может
+       перезаписать ответ, не теряя прогресса.
 """
 
 from __future__ import annotations
@@ -28,7 +31,7 @@ from sqlalchemy.orm import Session
 from app.auth import decode_token
 from app.db import SessionLocal
 from app.llm.evaluate import evaluate_voice_answer
-from app.llm.voice import synthesize_speech, transcribe_audio
+from app.llm.voice import AudioTooShortError, synthesize_speech, transcribe_audio
 from app.models import (
     InterviewSession,
     QuestionType,
@@ -148,17 +151,40 @@ async def interview_ws(websocket: WebSocket, session_id: int) -> None:
                 try:
                     audio = base64.b64decode(audio_b64)
                 except Exception:
-                    await websocket.send_json({"type": "error", "message": "Невалидное аудио"})
+                    await websocket.send_json({
+                        "type": "error",
+                        "code": "invalid_audio",
+                        "message": "Невалидное аудио",
+                        "recoverable": True,
+                    })
                     continue
                 if not audio:
-                    await websocket.send_json({"type": "error", "message": "Пустое аудио"})
+                    await websocket.send_json({
+                        "type": "error",
+                        "code": "audio_too_short",
+                        "message": "Запись пустая — нажмите и говорите",
+                        "recoverable": True,
+                    })
                     continue
 
                 try:
                     transcript = transcribe_audio(audio, filename="answer.webm")
+                except AudioTooShortError:
+                    await websocket.send_json({
+                        "type": "error",
+                        "code": "audio_too_short",
+                        "message": "Слишком короткая запись — попробуйте ответить ещё раз",
+                        "recoverable": True,
+                    })
+                    continue
                 except Exception as exc:
                     logger.exception("STT failed")
-                    await websocket.send_json({"type": "error", "message": f"STT failed: {exc}"})
+                    await websocket.send_json({
+                        "type": "error",
+                        "code": "stt_failed",
+                        "message": "Не удалось распознать речь, попробуйте ещё раз",
+                        "recoverable": True,
+                    })
                     continue
 
                 await websocket.send_json({"type": "transcript", "item_id": item.id, "text": transcript})
@@ -174,9 +200,14 @@ async def interview_ws(websocket: WebSocket, session_id: int) -> None:
                         criteria=criteria,
                         answer_text=transcript,
                     )
-                except Exception as exc:
+                except Exception:
                     logger.exception("Eval failed")
-                    await websocket.send_json({"type": "error", "message": f"Eval failed: {exc}"})
+                    await websocket.send_json({
+                        "type": "error",
+                        "code": "eval_failed",
+                        "message": "Не удалось оценить ответ, попробуйте сформулировать иначе",
+                        "recoverable": True,
+                    })
                     continue
 
                 if pending_follow_up:

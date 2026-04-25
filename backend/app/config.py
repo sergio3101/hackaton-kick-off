@@ -28,6 +28,8 @@ class Settings(BaseSettings):
         alias="BACKEND_CORS_ORIGINS",
     )
 
+    log_level: str = Field(default="INFO", alias="LOG_LEVEL")
+
     @property
     def database_url(self) -> str:
         return (

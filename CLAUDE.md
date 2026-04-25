@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Веб-сервис тренировочных интервью для подготовки специалистов к кик-оффам (хакатон-проект **P2**, ТЗ — `doc/ТЗ Сервис подготовки специалистов к кик-оффам.md`). MVP: голосовое Q&A + лайв-кодинг + LLM-оценка по смыслу + отчёт.
 
+Активный бэклог багов и улучшений — `doc/improvements.md` (приоритеты P0/P1/P2, статусы `[ ]/[~]/[x]/[-]`). Сверяться с ним перед началом работы и переносить закрытые пункты в раздел «Готово».
+
 ## Стек и команды
 
 - **Backend**: Python 3.12, FastAPI, SQLAlchemy 2 + Alembic, Postgres 16. Точка входа `backend/app/main.py`.
@@ -22,7 +24,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 1. **Загрузка → банк вопросов** (`POST /api/requirements`). Один LLM-вызов в `llm/extract.py` возвращает `summary + topics + бан вопросов на матрицу тема × уровень` (схема в `llm/prompts.py: EXTRACT_JSON_SCHEMA`). Темы и вопросы пишутся в `requirements.topics` (jsonb) и таблицу `question_bank`.
 2. **Создание сессии** (`POST /api/sessions`). Фильтр банка по выбранным темам + уровню → берём 10 вопросов (`VOICE_QUESTIONS_PER_SESSION` в `routers/sessions.py`) с равномерным распределением по темам, плюс одна кодинг-задача из `llm/generate.py`. Всё материализуется в `session_questions` (`type=voice|coding`).
 3. **Интервью**:
-   - **Голос** — WebSocket `/ws/interview/{session_id}?token=...` (`routers/interview_ws.py`). Клиент слышит TTS, шлёт webm-чанки; backend STT → eval LLM → возможно follow-up. Оценка в `llm/evaluate.py: evaluate_voice_answer`.
+   - **Голос** — WebSocket `/ws/interview/{session_id}?token=...` (`routers/interview_ws.py`). Клиент шлёт `hello / answer(audio_b64) / skip / next / finish`, сервер отвечает `question / transcript / evaluation / done / error`. Поток: TTS вопроса → webm-чанк ответа → STT → eval LLM → возможно follow-up. Оценка в `llm/evaluate.py: evaluate_voice_answer`.
    - **Кодинг** — REST `POST /api/sessions/{id}/coding/review` (`llm/evaluate.py: review_code`). Голос и кодинг работают параллельно на одной странице (`pages/Interview.tsx` со split-screen).
 4. **Завершение** (`POST /api/sessions/{id}/finish`) собирает `session_summary` (агрегаты + overall через `llm/evaluate.py: make_overall_summary`) и переводит сессию в `finished`. Отчёт читается через `GET /api/sessions/{id}/report`.
 

@@ -1,3 +1,4 @@
+import logging
 import random
 from datetime import datetime, timezone
 
@@ -7,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_user
 from app.db import get_db
 from app.llm.evaluate import make_overall_summary, review_code
-from app.llm.generate import generate_coding_task
+from app.llm.generate import generate_coding_tasks
 from app.models import (
     InterviewSession,
     Level,
@@ -30,9 +31,29 @@ from app.schemas import (
     SummaryOut,
 )
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
 
 VOICE_QUESTIONS_PER_SESSION = 10
+CODING_TASKS_PER_SESSION = 3
+
+
+def _pick_coding_topics(selected: list[str], count: int) -> list[str]:
+    """Подобрать ровно `count` тем для кодинг-задач.
+
+    Если выбранных тем хватает — берём `count` случайных без повторов.
+    Если меньше — циклически дополняем до нужного числа.
+    """
+    if not selected:
+        return []
+    if len(selected) >= count:
+        return random.sample(selected, count)
+    out: list[str] = []
+    i = 0
+    while len(out) < count:
+        out.append(selected[i % len(selected)])
+        i += 1
+    return out
 
 
 @router.get("", response_model=list[SessionOut])
@@ -88,11 +109,13 @@ def create_session(
             if len(chosen) >= VOICE_QUESTIONS_PER_SESSION:
                 break
 
-    coding = generate_coding_task(
+    coding_topics = _pick_coding_topics(payload.selected_topics, CODING_TASKS_PER_SESSION)
+    task_set = generate_coding_tasks(
         summary=req.summary,
-        topics=payload.selected_topics,
+        topics=coding_topics,
         level=payload.selected_level.value,
     )
+    primary_prompt = task_set.tasks[0].prompt if task_set.tasks else ""
 
     sess = InterviewSession(
         user_id=user.id,
@@ -100,8 +123,8 @@ def create_session(
         selected_topics=payload.selected_topics,
         selected_level=payload.selected_level,
         status=SessionStatus.draft,
-        coding_task_prompt=coding.prompt,
-        coding_task_language=coding.language or "python",
+        coding_task_prompt=primary_prompt,
+        coding_task_language=task_set.language or "python",
     )
     db.add(sess)
     db.flush()
@@ -116,17 +139,23 @@ def create_session(
             prompt_text=q.prompt,
             criteria=q.criteria,
         ))
-    db.add(SessionQuestion(
-        session_id=sess.id,
-        idx=len(chosen),
-        type=QuestionType.coding,
-        bank_id=None,
-        topic="coding",
-        prompt_text=coding.prompt,
-        criteria="",
-    ))
+    for j, task in enumerate(task_set.tasks):
+        db.add(SessionQuestion(
+            session_id=sess.id,
+            idx=len(chosen) + j,
+            type=QuestionType.coding,
+            bank_id=None,
+            topic=task.topic or "coding",
+            prompt_text=task.prompt,
+            criteria="",
+        ))
     db.commit()
     db.refresh(sess)
+    logger.info(
+        "create_session: session_id=%d, level=%s, topics=%s, voice=%d, coding=%d",
+        sess.id, payload.selected_level.value, payload.selected_topics,
+        len(chosen), len(task_set.tasks),
+    )
     return _to_detail(sess)
 
 
@@ -156,12 +185,14 @@ def start_session(
         sess.started_at = datetime.now(timezone.utc)
         db.commit()
         db.refresh(sess)
+        logger.info("start_session: session_id=%d", sess.id)
     return SessionOut.model_validate(sess)
 
 
-@router.post("/{session_id}/coding/review", response_model=SessionItemOut)
+@router.post("/{session_id}/coding/review/{item_id}", response_model=SessionItemOut)
 def submit_coding(
     session_id: int,
+    item_id: int,
     payload: CodingReviewIn,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -170,12 +201,15 @@ def submit_coding(
     if sess is None or sess.user_id != user.id:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    coding_item = next((i for i in sess.items if i.type == QuestionType.coding), None)
+    coding_item = next(
+        (i for i in sess.items if i.id == item_id and i.type == QuestionType.coding),
+        None,
+    )
     if coding_item is None:
-        raise HTTPException(status_code=400, detail="Coding task is missing in session")
+        raise HTTPException(status_code=404, detail="Coding task not found in session")
 
     review = review_code(
-        task_prompt=sess.coding_task_prompt,
+        task_prompt=coding_item.prompt_text,
         language=sess.coding_task_language,
         code=payload.code,
     )
@@ -185,6 +219,10 @@ def submit_coding(
     coding_item.rationale = review.rationale
     db.commit()
     db.refresh(coding_item)
+    logger.info(
+        "submit_coding: session_id=%d, item_id=%d, topic=%s, verdict=%s",
+        sess.id, coding_item.id, coding_item.topic, coding_item.verdict.value,
+    )
     return SessionItemOut.model_validate(coding_item)
 
 
@@ -226,6 +264,10 @@ def finish_session(
     db.commit()
     db.refresh(sess)
     db.refresh(summary)
+    logger.info(
+        "finish_session: session_id=%d, correct=%d, partial=%d, incorrect=%d, skipped=%d",
+        sess.id, summary.correct, summary.partial, summary.incorrect, summary.skipped,
+    )
 
     return ReportOut(
         session=SessionOut.model_validate(sess),

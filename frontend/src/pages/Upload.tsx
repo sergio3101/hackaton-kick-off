@@ -28,7 +28,7 @@ export default function Upload() {
       const r = await api.post<RequirementsDetailOut>("/api/requirements", fd, {
         headers: { "Content-Type": "multipart/form-data" },
       });
-      navigate(`/requirements/${r.data.id}/new-session`);
+      navigate(`/requirements/${r.data.id}`);
     } catch (e: any) {
       setError(e?.response?.data?.detail || "Не удалось обработать требования");
     } finally {

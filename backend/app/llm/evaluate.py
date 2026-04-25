@@ -1,4 +1,5 @@
 import json
+import logging
 from dataclasses import dataclass
 
 from app.config import get_settings
@@ -11,6 +12,8 @@ from app.llm.prompts import (
     VOICE_EVAL_JSON_SCHEMA,
     VOICE_EVAL_SYSTEM,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -51,11 +54,16 @@ def evaluate_voice_answer(
         temperature=0.2,
     )
     payload = json.loads(response.choices[0].message.content or "{}")
-    return VoiceEvaluation(
+    result = VoiceEvaluation(
         verdict=payload.get("verdict", "incorrect"),
         rationale=payload.get("rationale", ""),
         follow_up_question=payload.get("follow_up_question"),
     )
+    logger.info(
+        "evaluate_voice_answer: answer_len=%d, verdict=%s, has_followup=%s",
+        len(answer_text), result.verdict, result.follow_up_question is not None,
+    )
+    return result
 
 
 def review_code(*, task_prompt: str, language: str, code: str) -> CodeReview:
@@ -76,10 +84,15 @@ def review_code(*, task_prompt: str, language: str, code: str) -> CodeReview:
         temperature=0.2,
     )
     payload = json.loads(response.choices[0].message.content or "{}")
-    return CodeReview(
+    result = CodeReview(
         verdict=payload.get("verdict", "incorrect"),
         rationale=payload.get("rationale", ""),
     )
+    logger.info(
+        "review_code: language=%s, code_len=%d, verdict=%s",
+        language, len(code), result.verdict,
+    )
+    return result
 
 
 def make_overall_summary(items_text: str) -> str:
