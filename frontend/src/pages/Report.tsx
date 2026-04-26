@@ -3,8 +3,9 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 
 import { api } from "../api/client";
-import Breadcrumbs from "../components/Breadcrumbs";
 import { useAuth } from "../auth/AuthProvider";
+import Icon from "../components/Icon";
+import { Kpi } from "../components/UI";
 import { PasteBadge } from "../features/coding/CodingPanel";
 import type { ReportOut, Verdict } from "../api/types";
 
@@ -15,12 +16,14 @@ const VERDICT_LABEL: Record<Verdict, string> = {
   skipped: "пропущено",
 };
 
-const VERDICT_COLOR: Record<Verdict, string> = {
-  correct: "bg-emerald-100 text-emerald-800",
-  partial: "bg-amber-100 text-amber-800",
-  incorrect: "bg-rose-100 text-rose-800",
-  skipped: "bg-slate-200 text-slate-600",
+const VERDICT_PILL: Record<Verdict, string> = {
+  correct: "pill--accent",
+  partial: "pill--warn",
+  incorrect: "pill--danger",
+  skipped: "",
 };
+
+type Tab = "summary" | "voice" | "coding";
 
 export default function Report() {
   const { id } = useParams();
@@ -29,6 +32,7 @@ export default function Report() {
   const isAdmin = user?.role === "admin";
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>("summary");
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["report", sessionId],
@@ -60,29 +64,39 @@ export default function Report() {
         status === 401
           ? "Сессия истекла — войдите заново"
           : status === 404
-          ? "Отчёт не найден"
-          : "Не удалось сформировать PDF — попробуйте ещё раз";
+            ? "Отчёт не найден"
+            : "Не удалось сформировать PDF — попробуйте ещё раз";
       setPdfError(msg);
     } finally {
       setDownloadingPdf(false);
     }
   }
 
-  if (isLoading) return <div className="text-slate-500">Загрузка...</div>;
+  if (isLoading) {
+    return (
+      <div className="page" style={{ color: "var(--ink-3)" }}>
+        Загрузка...
+      </div>
+    );
+  }
 
   if (status === 403) {
     return (
-      <div className="space-y-4">
-        <h1 className="text-2xl font-semibold">Отчёт ещё не опубликован</h1>
-        <p className="text-slate-600 max-w-xl">
-          Спасибо, ответы записаны. Администратор просмотрит результаты и опубликует
-          отчёт — после этого вы увидите его в разделе «Мои кикоффы».
-        </p>
-        <Link
-          to="/me/assignments"
-          className="inline-block bg-brand hover:bg-brand-dark text-white px-4 py-2 rounded-lg text-sm"
-        >
-          ← К моим кикоффам
+      <div className="page">
+        <div className="page-head">
+          <div>
+            <div className="mono upper" style={{ color: "var(--warn)", marginBottom: 8 }}>
+              ОТЧЁТ В ПРОЦЕССЕ ПУБЛИКАЦИИ
+            </div>
+            <h1 className="page-title">Отчёт ещё не опубликован</h1>
+            <div className="page-sub" style={{ maxWidth: 520 }}>
+              Спасибо, ответы записаны. Администратор просмотрит результаты и опубликует
+              отчёт — после этого вы увидите его в разделе «Мои кикоффы».
+            </div>
+          </div>
+        </div>
+        <Link to="/me/assignments" className="btn btn--primary">
+          <Icon name="arrow-right" size={14} /> К моим кикоффам
         </Link>
       </div>
     );
@@ -90,14 +104,18 @@ export default function Report() {
 
   if (!data) {
     return (
-      <div className="space-y-3">
-        <div className="text-slate-500">Отчёт недоступен.</div>
-        <Link
-          to={isAdmin ? "/sessions" : "/me/assignments"}
-          className="text-sm text-brand hover:underline"
-        >
-          ← Назад
-        </Link>
+      <div className="page">
+        <div className="card" style={{ textAlign: "center", color: "var(--ink-3)" }}>
+          Отчёт недоступен.
+          <div style={{ marginTop: 12 }}>
+            <Link
+              to={isAdmin ? "/sessions" : "/me/assignments"}
+              className="btn btn--sm"
+            >
+              ← Назад
+            </Link>
+          </div>
+        </div>
       </div>
     );
   }
@@ -108,199 +126,483 @@ export default function Report() {
     (summary?.partial ?? 0) +
     (summary?.incorrect ?? 0) +
     (summary?.skipped ?? 0);
+  const score =
+    total > 0
+      ? ((summary?.correct ?? 0) + (summary?.partial ?? 0) * 0.5) / total
+      : 0;
+
+  const voiceItems = data.items.filter((i) => i.type === "voice");
+  const codingItems = data.items.filter((i) => i.type === "coding");
+  const voiceCount = voiceItems.length;
+  const answeredCount = voiceItems.filter((i) => i.verdict && i.verdict !== "skipped").length;
 
   return (
-    <div className="space-y-6">
-      <Breadcrumbs
-        items={[
-          { label: isAdmin ? "Сессии" : "Мои отчёты", to: "/sessions" },
-          { label: `Сессия #${data.session.id}` },
-          { label: "Отчёт" },
-        ]}
-      />
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h1 className="text-2xl font-semibold">Отчёт по интервью</h1>
-        <div className="flex items-center gap-3 flex-wrap">
-          {isAdmin && (
-            <Link
-              to={`/requirements/${data.session.requirements_id}/new-session`}
-              className="text-sm bg-brand hover:bg-brand-dark text-white px-3 py-1.5 rounded-lg"
-            >
-              Ещё одну сессию по этому проекту
-            </Link>
-          )}
+    <div className="page">
+      <div className="page-head">
+        <div>
+          <div
+            className="mono upper"
+            style={{ color: "var(--ink-3)", marginBottom: 8 }}
+          >
+            HISTORY · SESSION #{data.session.id} · REPORT
+          </div>
+          <h1 className="page-title">Отчёт по интервью #{data.session.id}</h1>
+          <div className="page-sub">
+            {new Date(data.session.created_at).toLocaleString("ru-RU")} · уровень{" "}
+            <span className="mono" style={{ color: "var(--accent)" }}>
+              {data.session.selected_level}
+            </span>{" "}
+            · режим {data.session.mode} · темы:{" "}
+            {data.session.selected_topics.join(", ")}
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button
             type="button"
             onClick={downloadPdf}
             disabled={downloadingPdf}
-            className="text-sm bg-slate-900 hover:bg-slate-700 text-white px-3 py-1.5 rounded-lg disabled:opacity-50"
+            className="btn"
           >
-            {downloadingPdf ? "Готовлю PDF..." : "Скачать PDF"}
+            <Icon name="doc" size={13} />
+            {downloadingPdf ? "Готовлю..." : "PDF"}
           </button>
-          <Link
-            to={isAdmin ? "/sessions" : "/me/assignments"}
-            className="text-sm text-brand hover:underline"
-          >
-            ← {isAdmin ? "К сессиям" : "К моим кикоффам"}
-          </Link>
+          {isAdmin && (
+            <Link
+              to={`/admin/sessions/${data.session.id}`}
+              className="btn btn--primary"
+            >
+              <Icon name="settings" size={13} /> Ревью администратора
+            </Link>
+          )}
         </div>
       </div>
+
       {pdfError && (
-        <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800 flex items-start justify-between gap-3">
+        <div
+          style={{
+            marginBottom: 16,
+            padding: "10px 14px",
+            background: "var(--danger-soft)",
+            border: "1px solid oklch(0.40 0.10 25)",
+            borderRadius: "var(--r-2)",
+            color: "oklch(0.78 0.16 25)",
+            fontSize: 13,
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 12,
+          }}
+        >
           <span>{pdfError}</span>
           <button
             type="button"
             onClick={() => setPdfError(null)}
-            className="text-xs text-rose-700 hover:text-rose-900 underline"
+            style={{
+              fontSize: 11,
+              textDecoration: "underline",
+              background: "none",
+              border: "none",
+              color: "inherit",
+            }}
           >
             Закрыть
           </button>
         </div>
       )}
 
+      {/* KPI */}
       {summary && (
-        <section className="bg-white border rounded-xl p-5">
-          <h2 className="font-semibold mb-3">Итоги</h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-            <Stat label="Верно" value={summary.correct} color="text-emerald-700" />
-            <Stat label="Частично" value={summary.partial} color="text-amber-700" />
-            <Stat label="Неверно" value={summary.incorrect} color="text-rose-700" />
-            <Stat label="Пропущено" value={summary.skipped} color="text-slate-600" />
-          </div>
-          <div className="text-xs text-slate-400 mb-3 flex items-center justify-between">
-            <span>Всего пунктов: {total}</span>
-            {data.total_cost_usd !== undefined && data.total_cost_usd > 0 && (
-              <span title="Стоимость OpenAI-вызовов на эту сессию">
-                Стоимость сессии: ${data.total_cost_usd.toFixed(4)}
-              </span>
-            )}
-          </div>
-          {summary.overall && (
-            <div className="bg-slate-50 border rounded-lg p-4 text-slate-800 leading-relaxed whitespace-pre-wrap">
-              {summary.overall}
-            </div>
-          )}
-        </section>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(4, 1fr)",
+            gap: 14,
+            marginBottom: 18,
+          }}
+        >
+          <Kpi
+            label="Score"
+            value={`${Math.round(score * 100)}%`}
+            hint={`${total} пунктов`}
+          />
+          <Kpi
+            label="Покрытие"
+            value={`${answeredCount}/${voiceCount}`}
+            hint="вопросов задано"
+          />
+          <Kpi
+            label="Верно"
+            value={summary.correct}
+            hint={`${summary.partial} частично`}
+          />
+          <Kpi
+            label="Стоимость"
+            value={
+              data.total_cost_usd ? `$${data.total_cost_usd.toFixed(4)}` : "—"
+            }
+            hint="LLM/TTS/STT"
+            sparkColor="var(--warn)"
+          />
+        </div>
       )}
 
-      <section className="space-y-3">
-        <h2 className="font-semibold">Голосовые вопросы</h2>
-        {data.items
-          .filter((i) => i.type === "voice")
-          .map((item) => (
-            <div key={item.id} className="bg-white border rounded-xl p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex-1">
-                  <div className="text-xs uppercase text-slate-400">{item.topic}</div>
-                  <div className="font-medium mt-1">{item.prompt_text}</div>
-                </div>
-                {item.verdict && (
-                  <span
-                    className={`text-xs px-2 py-1 rounded ${VERDICT_COLOR[item.verdict]}`}
-                  >
-                    {VERDICT_LABEL[item.verdict]}
-                  </span>
-                )}
-              </div>
-              <div className="mt-3 text-sm">
-                <div className="text-slate-500 text-xs mb-1">Ответ кандидата</div>
-                <div className="text-slate-800 whitespace-pre-wrap">
-                  {item.answer_text || "(пусто)"}
-                </div>
-              </div>
-              {item.rationale && (
-                <div className="mt-3 text-sm">
-                  <div className="text-slate-500 text-xs mb-1">Обоснование</div>
-                  <div className="text-slate-700 bg-slate-50 border rounded p-3 whitespace-pre-wrap">
-                    {item.rationale}
-                  </div>
-                </div>
-              )}
-              {item.explanation && (
-                <div className="mt-3 text-sm">
-                  <div className="text-slate-500 text-xs mb-1">Что упущено</div>
-                  <div className="text-slate-700 bg-amber-50 border border-amber-200 rounded p-3 whitespace-pre-wrap">
-                    {item.explanation}
-                  </div>
-                </div>
-              )}
-              {item.expected_answer && (
-                <div className="mt-3 text-sm">
-                  <div className="text-slate-500 text-xs mb-1">Эталонный ответ</div>
-                  <div className="text-slate-800 bg-emerald-50 border border-emerald-200 rounded p-3 whitespace-pre-wrap leading-relaxed">
-                    {item.expected_answer}
-                  </div>
-                </div>
-              )}
-            </div>
-          ))}
-      </section>
+      {/* Tabs */}
+      <div
+        style={{
+          display: "flex",
+          gap: 4,
+          borderBottom: "1px solid var(--bg-line)",
+          marginBottom: 18,
+        }}
+      >
+        {(
+          [
+            { k: "summary" as const, l: "Резюме" },
+            { k: "voice" as const, l: `Голос · ${voiceCount}` },
+            { k: "coding" as const, l: `Кодинг · ${codingItems.length}` },
+          ] satisfies { k: Tab; l: string }[]
+        ).map((t) => (
+          <button
+            key={t.k}
+            type="button"
+            onClick={() => setTab(t.k)}
+            style={{
+              padding: "10px 16px",
+              fontSize: 13,
+              fontWeight: 500,
+              color: tab === t.k ? "var(--ink-1)" : "var(--ink-3)",
+              marginBottom: -1,
+              background: "transparent",
+              border: "none",
+              borderBottom: `2px solid ${
+                tab === t.k ? "var(--accent)" : "transparent"
+              }`,
+              cursor: "pointer",
+            }}
+          >
+            {t.l}
+          </button>
+        ))}
+      </div>
 
-      <section className="space-y-3">
-        <h2 className="font-semibold">Лайв-кодинг</h2>
-        {data.items
-          .filter((i) => i.type === "coding")
-          .map((item) => (
-            <div key={item.id} className="bg-white border rounded-xl p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex-1">
-                  <div className="text-xs uppercase text-slate-400">Задача</div>
-                  <div className="text-sm mt-1 whitespace-pre-wrap">{item.prompt_text}</div>
-                </div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  {item.verdict && (
-                    <span
-                      className={`text-xs px-2 py-1 rounded ${VERDICT_COLOR[item.verdict]}`}
+      {tab === "summary" && summary && (
+        <div className="card">
+          <div
+            style={{
+              fontWeight: 500,
+              marginBottom: 12,
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+            }}
+          >
+            <Icon name="sparkle" size={14} />
+            AI-резюме
+          </div>
+          <div
+            style={{
+              fontSize: 14,
+              lineHeight: 1.65,
+              color: "var(--ink-2)",
+              whiteSpace: "pre-wrap",
+            }}
+          >
+            {summary.overall || "Резюме не сформировано"}
+          </div>
+          <div
+            style={{
+              marginTop: 18,
+              display: "grid",
+              gridTemplateColumns: "repeat(4, 1fr)",
+              gap: 10,
+            }}
+          >
+            <VerdictStat
+              label="Верно"
+              value={summary.correct}
+              color="var(--accent)"
+            />
+            <VerdictStat
+              label="Частично"
+              value={summary.partial}
+              color="var(--warn)"
+            />
+            <VerdictStat
+              label="Неверно"
+              value={summary.incorrect}
+              color="var(--danger)"
+            />
+            <VerdictStat
+              label="Пропущено"
+              value={summary.skipped}
+              color="var(--ink-3)"
+            />
+          </div>
+        </div>
+      )}
+
+      {tab === "voice" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {voiceItems.length === 0 ? (
+            <div
+              className="card"
+              style={{ color: "var(--ink-3)", textAlign: "center" }}
+            >
+              Голосовых вопросов в сессии нет.
+            </div>
+          ) : (
+            voiceItems.map((item) => (
+              <div key={item.id} className="card">
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    marginBottom: 12,
+                  }}
+                >
+                  <div style={{ flex: 1 }}>
+                    <div
+                      className="mono upper"
+                      style={{ color: "var(--accent)", marginBottom: 4 }}
                     >
+                      {item.topic}
+                    </div>
+                    <div style={{ fontWeight: 500 }}>{item.prompt_text}</div>
+                  </div>
+                  {item.verdict && (
+                    <span className={`pill ${VERDICT_PILL[item.verdict]}`}>
                       {VERDICT_LABEL[item.verdict]}
                     </span>
                   )}
-                  {isAdmin && (item.paste_chars ?? 0) > 0 && (
-                    <PasteBadge
-                      pasteChars={item.paste_chars ?? 0}
-                      codeLen={item.answer_text?.length ?? 0}
-                    />
-                  )}
                 </div>
-              </div>
-              {item.answer_text && (
-                <pre className="mt-3 bg-slate-900 text-slate-100 text-xs rounded p-3 overflow-auto">
-                  {item.answer_text}
-                </pre>
-              )}
-              {item.rationale && (
-                <div className="mt-3 text-slate-700 bg-slate-50 border rounded p-3 whitespace-pre-wrap text-sm">
-                  {item.rationale}
-                </div>
-              )}
-              {item.explanation && (
-                <div className="mt-3 text-sm">
-                  <div className="text-slate-500 text-xs mb-1">Что упущено</div>
-                  <div className="text-slate-700 bg-amber-50 border border-amber-200 rounded p-3 whitespace-pre-wrap">
+                <ReportBlock label="Ответ кандидата">
+                  {item.answer_text || "(пусто)"}
+                </ReportBlock>
+                {item.rationale && (
+                  <ReportBlock label="Обоснование">{item.rationale}</ReportBlock>
+                )}
+                {item.explanation && (
+                  <ReportBlock label="Что упущено" variant="warn">
                     {item.explanation}
+                  </ReportBlock>
+                )}
+                {item.expected_answer && (
+                  <ReportBlock label="Эталонный ответ" variant="accent">
+                    {item.expected_answer}
+                  </ReportBlock>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {tab === "coding" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {codingItems.length === 0 ? (
+            <div
+              className="card"
+              style={{ color: "var(--ink-3)", textAlign: "center" }}
+            >
+              Кодинг-задач в сессии нет.
+            </div>
+          ) : (
+            codingItems.map((item) => (
+              <div key={item.id} className="card">
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    marginBottom: 12,
+                  }}
+                >
+                  <div style={{ flex: 1 }}>
+                    <div
+                      className="mono upper"
+                      style={{ color: "var(--accent)", marginBottom: 4 }}
+                    >
+                      {item.topic}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 13,
+                        color: "var(--ink-2)",
+                        whiteSpace: "pre-wrap",
+                      }}
+                    >
+                      {item.prompt_text}
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 6,
+                      flexWrap: "wrap",
+                      alignItems: "flex-start",
+                    }}
+                  >
+                    {item.verdict && (
+                      <span className={`pill ${VERDICT_PILL[item.verdict]}`}>
+                        {VERDICT_LABEL[item.verdict]}
+                      </span>
+                    )}
+                    {isAdmin && (item.paste_chars ?? 0) > 0 && (
+                      <PasteBadge
+                        pasteChars={item.paste_chars ?? 0}
+                        codeLen={item.answer_text?.length ?? 0}
+                      />
+                    )}
                   </div>
                 </div>
-              )}
-              {item.expected_answer && (
-                <div className="mt-3 text-sm">
-                  <div className="text-slate-500 text-xs mb-1">Эталонное решение</div>
-                  <pre className="bg-slate-900 text-slate-100 text-xs rounded p-3 overflow-auto">
-                    {item.expected_answer}
+                {item.answer_text && (
+                  <pre
+                    style={{
+                      background: "oklch(0.13 0.005 60)",
+                      color: "var(--ink-1)",
+                      fontSize: 12,
+                      padding: 12,
+                      borderRadius: "var(--r-2)",
+                      border: "1px solid var(--bg-line)",
+                      overflow: "auto",
+                      margin: "0 0 12px",
+                      fontFamily: "var(--font-mono)",
+                      lineHeight: 1.55,
+                    }}
+                  >
+                    {item.answer_text}
                   </pre>
-                </div>
-              )}
-            </div>
-          ))}
-      </section>
+                )}
+                {item.rationale && (
+                  <ReportBlock label="Обоснование">{item.rationale}</ReportBlock>
+                )}
+                {item.explanation && (
+                  <ReportBlock label="Что упущено" variant="warn">
+                    {item.explanation}
+                  </ReportBlock>
+                )}
+                {item.expected_answer && (
+                  <div style={{ marginTop: 10 }}>
+                    <div
+                      className="mono upper"
+                      style={{ color: "var(--accent)", marginBottom: 6 }}
+                    >
+                      Эталонное решение
+                    </div>
+                    <pre
+                      style={{
+                        background: "oklch(0.13 0.005 60)",
+                        color: "var(--accent)",
+                        fontSize: 12,
+                        padding: 12,
+                        borderRadius: "var(--r-2)",
+                        border: "1px solid oklch(0.40 0.10 130)",
+                        overflow: "auto",
+                        margin: 0,
+                        fontFamily: "var(--font-mono)",
+                        lineHeight: 1.55,
+                      }}
+                    >
+                      {item.expected_answer}
+                    </pre>
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-function Stat({ label, value, color }: { label: string; value: number; color: string }) {
+function VerdictStat({
+  label,
+  value,
+  color,
+}: {
+  label: string;
+  value: number;
+  color: string;
+}) {
   return (
-    <div className="bg-slate-50 border rounded-lg p-3 text-center">
-      <div className={`text-2xl font-semibold ${color}`}>{value}</div>
-      <div className="text-xs text-slate-500 mt-1">{label}</div>
+    <div
+      style={{
+        background: "var(--bg-2)",
+        border: "1px solid var(--bg-line)",
+        borderRadius: "var(--r-2)",
+        padding: "12px 14px",
+        textAlign: "center",
+      }}
+    >
+      <div
+        className="mono"
+        style={{
+          fontSize: 24,
+          fontWeight: 500,
+          color,
+          fontVariantNumeric: "tabular-nums",
+        }}
+      >
+        {value}
+      </div>
+      <div
+        className="mono upper"
+        style={{ color: "var(--ink-3)", marginTop: 4 }}
+      >
+        {label}
+      </div>
+    </div>
+  );
+}
+
+function ReportBlock({
+  label,
+  children,
+  variant = "default",
+}: {
+  label: string;
+  children: React.ReactNode;
+  variant?: "default" | "warn" | "accent";
+}) {
+  const styles: Record<string, React.CSSProperties> = {
+    default: {
+      background: "var(--bg-2)",
+      borderColor: "var(--bg-line)",
+      color: "var(--ink-1)",
+    },
+    warn: {
+      background: "var(--warn-soft)",
+      borderColor: "oklch(0.40 0.08 75)",
+      color: "var(--warn)",
+    },
+    accent: {
+      background: "var(--accent-soft)",
+      borderColor: "oklch(0.40 0.10 130)",
+      color: "var(--accent)",
+    },
+  };
+  return (
+    <div style={{ marginTop: 10 }}>
+      <div
+        className="mono upper"
+        style={{ color: "var(--ink-3)", marginBottom: 6 }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          padding: "10px 14px",
+          borderRadius: "var(--r-2)",
+          border: "1px solid",
+          fontSize: 13,
+          lineHeight: 1.55,
+          whiteSpace: "pre-wrap",
+          ...styles[variant],
+        }}
+      >
+        {children}
+      </div>
     </div>
   );
 }

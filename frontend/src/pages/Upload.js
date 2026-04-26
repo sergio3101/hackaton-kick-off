@@ -1,7 +1,8 @@
-import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
+import Icon from "../components/Icon";
 export default function Upload() {
     const navigate = useNavigate();
     const [files, setFiles] = useState([]);
@@ -42,9 +43,71 @@ export default function Upload() {
         const list = Array.from(e.target.files || []).filter((f) => f.name.toLowerCase().endsWith(".md"));
         setFiles(list);
     }
-    return (_jsxs("div", { className: "max-w-3xl mx-auto", children: [_jsx("h1", { className: "text-2xl font-semibold mb-6", children: "\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430 \u0430\u0440\u0442\u0435\u0444\u0430\u043A\u0442\u043E\u0432 \u043F\u0440\u043E\u0435\u043A\u0442\u0430" }), _jsxs("form", { onSubmit: onSubmit, className: "bg-white border rounded-xl p-6 space-y-4", children: [_jsxs("div", { children: [_jsx("label", { className: "block text-sm text-slate-600 mb-1", children: "\u041D\u0430\u0437\u0432\u0430\u043D\u0438\u0435 \u043F\u0440\u043E\u0435\u043A\u0442\u0430" }), _jsx("input", { type: "text", value: title, onChange: (e) => setTitle(e.target.value), placeholder: "\u041D\u0430\u043F\u0440\u0438\u043C\u0435\u0440: Mobile Banking Q3", className: "w-full px-3 py-2 border rounded-lg" })] }), _jsxs("div", { children: [_jsx("label", { className: "block text-sm text-slate-600 mb-1", children: "Markdown \u0444\u0430\u0439\u043B\u044B (.md)" }), _jsx("input", { type: "file", multiple: true, accept: ".md,text/markdown", onChange: onPickFiles, className: "block w-full text-sm" }), files.length > 0 && (_jsx("ul", { className: "text-xs text-slate-500 mt-2 space-y-0.5", children: files.map((f) => (_jsxs("li", { children: ["\u2022 ", f.name, " (", Math.round(f.size / 1024), " KB)"] }, f.name))) }))] }), _jsxs("div", { children: [_jsx("label", { className: "block text-sm text-slate-600 mb-1", children: "\u2026\u0438\u043B\u0438 \u0432\u0441\u0442\u0430\u0432\u044C\u0442\u0435 \u0442\u0435\u043A\u0441\u0442 \u043D\u0430\u043F\u0440\u044F\u043C\u0443\u044E" }), _jsx("textarea", { value: text, onChange: (e) => setText(e.target.value), rows: 8, placeholder: "\u041E\u043F\u0438\u0441\u0430\u043D\u0438\u0435 \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u0432 \u0444\u043E\u0440\u043C\u0430\u0442\u0435 Markdown...", className: "w-full px-3 py-2 border rounded-lg font-mono text-sm" })] }), _jsxs("div", { children: [_jsx("label", { className: "block text-sm text-slate-600 mb-1", children: "\u0412\u043E\u043F\u0440\u043E\u0441\u043E\u0432 \u043D\u0430 \u043F\u0430\u0440\u0443 \u0442\u0435\u043C\u0430 \u00D7 \u0443\u0440\u043E\u0432\u0435\u043D\u044C" }), _jsxs("div", { className: "flex items-center gap-3", children: [_jsx("input", { type: "number", min: 1, max: 10, value: questionsPerPair, onChange: (e) => {
+    return (_jsxs("div", { className: "page", style: { maxWidth: 880 }, children: [_jsx("div", { className: "page-head", children: _jsxs("div", { children: [_jsx("div", { className: "mono upper", style: { color: "var(--accent)", marginBottom: 8 }, children: "UPLOAD \u00B7 \u0410\u0420\u0422\u0415\u0424\u0410\u041A\u0422\u042B \u041F\u0420\u041E\u0415\u041A\u0422\u0410" }), _jsx("h1", { className: "page-title", children: "\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430 \u0422\u0417" }), _jsx("div", { className: "page-sub", children: "\u0418\u0418 \u0438\u0437\u0432\u043B\u0435\u0447\u0451\u0442 \u0442\u0435\u043C\u044B \u0438 \u0441\u0433\u0435\u043D\u0435\u0440\u0438\u0440\u0443\u0435\u0442 \u0431\u0430\u043D\u043A \u0432\u043E\u043F\u0440\u043E\u0441\u043E\u0432 \u043D\u0430 \u043C\u0430\u0442\u0440\u0438\u0446\u0443 \u0442\u0435\u043C\u0430 \u00D7 \u0443\u0440\u043E\u0432\u0435\u043D\u044C." })] }) }), _jsxs("form", { onSubmit: onSubmit, className: "card", style: { display: "flex", flexDirection: "column", gap: 16 }, children: [_jsxs("div", { children: [_jsx("label", { style: {
+                                    display: "block",
+                                    fontSize: 11,
+                                    textTransform: "uppercase",
+                                    letterSpacing: "0.08em",
+                                    color: "var(--ink-3)",
+                                    marginBottom: 6,
+                                }, children: "\u041D\u0430\u0437\u0432\u0430\u043D\u0438\u0435 \u043F\u0440\u043E\u0435\u043A\u0442\u0430" }), _jsx("input", { type: "text", value: title, onChange: (e) => setTitle(e.target.value), placeholder: "\u041D\u0430\u043F\u0440\u0438\u043C\u0435\u0440: FleetOps Q3", className: "input" })] }), _jsxs("div", { children: [_jsx("label", { style: {
+                                    display: "block",
+                                    fontSize: 11,
+                                    textTransform: "uppercase",
+                                    letterSpacing: "0.08em",
+                                    color: "var(--ink-3)",
+                                    marginBottom: 6,
+                                }, children: "Markdown \u0444\u0430\u0439\u043B\u044B (.md)" }), _jsxs("div", { style: {
+                                    padding: 16,
+                                    border: "1px dashed var(--bg-line)",
+                                    borderRadius: "var(--r-2)",
+                                    background: "var(--bg-2)",
+                                }, children: [_jsx("input", { type: "file", multiple: true, accept: ".md,text/markdown", onChange: onPickFiles, style: {
+                                            display: "block",
+                                            width: "100%",
+                                            fontSize: 12,
+                                            color: "var(--ink-2)",
+                                        } }), files.length > 0 && (_jsx("ul", { style: {
+                                            fontSize: 11,
+                                            color: "var(--ink-3)",
+                                            marginTop: 10,
+                                            padding: 0,
+                                            listStyle: "none",
+                                            display: "flex",
+                                            flexDirection: "column",
+                                            gap: 2,
+                                        }, children: files.map((f) => (_jsxs("li", { className: "mono", children: ["\u2022 ", f.name, " (", Math.round(f.size / 1024), " KB)"] }, f.name))) }))] })] }), _jsxs("div", { children: [_jsx("label", { style: {
+                                    display: "block",
+                                    fontSize: 11,
+                                    textTransform: "uppercase",
+                                    letterSpacing: "0.08em",
+                                    color: "var(--ink-3)",
+                                    marginBottom: 6,
+                                }, children: "\u2026\u0438\u043B\u0438 \u0432\u0441\u0442\u0430\u0432\u044C\u0442\u0435 \u0442\u0435\u043A\u0441\u0442 \u043D\u0430\u043F\u0440\u044F\u043C\u0443\u044E" }), _jsx("textarea", { value: text, onChange: (e) => setText(e.target.value), rows: 8, placeholder: "\u041E\u043F\u0438\u0441\u0430\u043D\u0438\u0435 \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u0432 \u0444\u043E\u0440\u043C\u0430\u0442\u0435 Markdown...", className: "input textarea mono", style: { resize: "vertical", fontSize: 12 } })] }), _jsxs("div", { children: [_jsx("label", { style: {
+                                    display: "block",
+                                    fontSize: 11,
+                                    textTransform: "uppercase",
+                                    letterSpacing: "0.08em",
+                                    color: "var(--ink-3)",
+                                    marginBottom: 6,
+                                }, children: "\u0412\u043E\u043F\u0440\u043E\u0441\u043E\u0432 \u043D\u0430 \u043F\u0430\u0440\u0443 \u0442\u0435\u043C\u0430 \u00D7 \u0443\u0440\u043E\u0432\u0435\u043D\u044C" }), _jsxs("div", { style: { display: "flex", alignItems: "center", gap: 12 }, children: [_jsx("input", { type: "number", min: 1, max: 10, value: questionsPerPair, onChange: (e) => {
                                             const n = Number(e.target.value);
                                             if (Number.isFinite(n))
                                                 setQuestionsPerPair(Math.max(1, Math.min(10, n)));
-                                        }, className: "w-20 px-3 py-2 border rounded-lg text-center" }), _jsxs("span", { className: "text-xs text-slate-500", children: ["\u041F\u043E \u0443\u043C\u043E\u043B\u0447\u0430\u043D\u0438\u044E 5. \u0414\u0438\u0430\u043F\u0430\u0437\u043E\u043D 1\u201310. \u041D\u0430 \u043A\u0430\u0436\u0434\u0443\u044E \u0442\u0435\u043C\u0443 \u0441\u0433\u0435\u043D\u0435\u0440\u0438\u0440\u0443\u0435\u0442\u0441\u044F", " ", _jsx("strong", { children: questionsPerPair * 3 }), " \u0432\u043E\u043F\u0440\u043E\u0441\u043E\u0432 (junior + middle + senior). \u0411\u043E\u043B\u044C\u0448\u0435 \u0432\u043E\u043F\u0440\u043E\u0441\u043E\u0432 = \u0434\u043E\u043B\u044C\u0448\u0435 \u0433\u0435\u043D\u0435\u0440\u0430\u0446\u0438\u044F \u0438 \u0431\u043E\u043B\u044C\u0448\u0435 \u0442\u043E\u043A\u0435\u043D\u043E\u0432."] })] })] }), error && _jsx("div", { className: "text-rose-600 text-sm", children: error }), _jsx("div", { className: "flex justify-end", children: _jsx("button", { type: "submit", disabled: busy, className: "bg-brand hover:bg-brand-dark text-white px-5 py-2 rounded-lg disabled:opacity-50", children: busy ? "Анализ требований и генерация банка вопросов..." : "Загрузить и сгенерировать" }) }), _jsx("div", { className: "text-xs text-slate-400", children: "\u041D\u0430 \u0433\u0435\u043D\u0435\u0440\u0430\u0446\u0438\u044E \u0432\u043E\u043F\u0440\u043E\u0441\u043E\u0432 \u0443\u0445\u043E\u0434\u0438\u0442 \u0434\u043E 30 \u0441\u0435\u043A\u0443\u043D\u0434." })] })] }));
+                                        }, className: "input", style: { width: 80, textAlign: "center" } }), _jsxs("span", { style: { fontSize: 12, color: "var(--ink-3)", lineHeight: 1.5 }, children: ["\u041F\u043E \u0443\u043C\u043E\u043B\u0447\u0430\u043D\u0438\u044E 5. \u041D\u0430 \u043A\u0430\u0436\u0434\u0443\u044E \u0442\u0435\u043C\u0443 \u0441\u0433\u0435\u043D\u0435\u0440\u0438\u0440\u0443\u0435\u0442\u0441\u044F", " ", _jsx("strong", { className: "mono", style: { color: "var(--accent)" }, children: questionsPerPair * 3 }), " ", "\u0432\u043E\u043F\u0440\u043E\u0441\u043E\u0432 (junior + middle + senior)."] })] })] }), error && (_jsx("div", { style: {
+                            padding: "10px 14px",
+                            background: "var(--danger-soft)",
+                            border: "1px solid oklch(0.40 0.10 25)",
+                            borderRadius: "var(--r-2)",
+                            color: "oklch(0.78 0.16 25)",
+                            fontSize: 13,
+                        }, children: error })), _jsxs("div", { style: {
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            gap: 12,
+                            paddingTop: 4,
+                        }, children: [_jsx("span", { className: "mono", style: { fontSize: 11, color: "var(--ink-4)" }, children: "\u041D\u0430 \u0433\u0435\u043D\u0435\u0440\u0430\u0446\u0438\u044E \u0443\u0445\u043E\u0434\u0438\u0442 \u0434\u043E 30 \u0441\u0435\u043A\u0443\u043D\u0434" }), _jsx("button", { type: "submit", disabled: busy, className: "btn btn--primary btn--lg", children: busy
+                                    ? "Генерируем банк вопросов..."
+                                    : (_jsxs(_Fragment, { children: [_jsx(Icon, { name: "sparkle", size: 14 }), " \u0417\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0438 \u0441\u0433\u0435\u043D\u0435\u0440\u0438\u0440\u043E\u0432\u0430\u0442\u044C"] })) })] })] })] }));
 }

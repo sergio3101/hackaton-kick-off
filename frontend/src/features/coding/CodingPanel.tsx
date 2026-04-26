@@ -4,6 +4,7 @@ import Editor from "@monaco-editor/react";
 import { api } from "../../api/client";
 import { useAuth } from "../../auth/AuthProvider";
 import type { SessionDetailOut, SessionItem } from "../../api/types";
+import Icon from "../../components/Icon";
 
 interface Props {
   session: SessionDetailOut;
@@ -79,7 +80,6 @@ export default function CodingPanel({ session, onSubmitted }: Props) {
     activeIdRef.current = activeId;
   }, [activeId]);
 
-  // Сбрасываем счётчик вставленных символов при смене сессии (другая интервью-сессия = чистый счёт).
   useEffect(() => {
     setPasteCharsById({});
     setRunOutputById({});
@@ -159,7 +159,17 @@ export default function CodingPanel({ session, onSubmitted }: Props) {
 
   if (codingItems.length === 0) {
     return (
-      <div className="flex flex-col h-full bg-white border rounded-lg p-4 text-sm text-slate-500">
+      <div
+        className="card"
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          padding: 20,
+          fontSize: 13,
+          color: "var(--ink-3)",
+          height: "100%",
+        }}
+      >
         Кодинг-задачи отсутствуют в сессии.
       </div>
     );
@@ -170,55 +180,113 @@ export default function CodingPanel({ session, onSubmitted }: Props) {
   const activeRunOutput = active ? runOutputById[active.id] : null;
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="bg-white border rounded-t-lg">
-        <div className="flex items-center gap-2 border-b px-3 pt-3">
-          {codingItems.map((it, idx) => {
-            const result = resultById[it.id];
-            const isActive = it.id === activeId;
-            return (
-              <button
-                key={it.id}
-                type="button"
-                onClick={() => setActiveId(it.id)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-t-lg border-b-2 -mb-px transition-colors ${
-                  isActive
-                    ? "border-brand text-slate-900 bg-white"
-                    : "border-transparent text-slate-500 hover:text-slate-800"
-                }`}
-              >
-                <span className="text-xs text-slate-400">#{idx + 1}</span>
-                <span className="font-medium">{it.topic}</span>
-                {result && (
-                  <span
-                    className={`ml-1 inline-block w-2 h-2 rounded-full ${
+    <div
+      className="card"
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        padding: 0,
+        overflow: "hidden",
+        height: "100%",
+        minHeight: 0,
+      }}
+    >
+      {/* Tabs */}
+      <div
+        style={{
+          padding: "10px 16px 0",
+          borderBottom: "1px solid var(--bg-line)",
+          display: "flex",
+          gap: 4,
+          alignItems: "flex-end",
+        }}
+      >
+        {codingItems.map((it, idx) => {
+          const result = resultById[it.id];
+          const isActive = it.id === activeId;
+          return (
+            <button
+              key={it.id}
+              type="button"
+              onClick={() => setActiveId(it.id)}
+              style={{
+                padding: "8px 14px",
+                fontSize: 12,
+                fontWeight: 500,
+                color: isActive ? "var(--ink-1)" : "var(--ink-3)",
+                background: "transparent",
+                border: "none",
+                borderBottom: `2px solid ${
+                  isActive ? "var(--accent)" : "transparent"
+                }`,
+                marginBottom: -1,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                cursor: "pointer",
+              }}
+            >
+              <span className="mono" style={{ color: "var(--ink-4)" }}>
+                #{idx + 1}
+              </span>
+              <span>{it.topic}</span>
+              {result && (
+                <span
+                  className="dot"
+                  style={{
+                    background:
                       result.verdict === "correct"
-                        ? "bg-emerald-500"
+                        ? "var(--accent)"
                         : result.verdict === "partial"
-                        ? "bg-amber-500"
-                        : "bg-rose-500"
-                    }`}
-                    title={result.verdict}
-                  />
-                )}
-              </button>
-            );
-          })}
-        </div>
-        <div className="p-4">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="font-semibold">
-              Лайв-кодинг ({lang})
-              {active && <span className="text-slate-400 font-normal"> — тема: {active.topic}</span>}
-            </h3>
-          </div>
-          {active && (
-            <p className="text-sm text-slate-700 whitespace-pre-wrap">{active.prompt_text}</p>
-          )}
-        </div>
+                          ? "var(--warn)"
+                          : "var(--danger)",
+                  }}
+                  title={result.verdict}
+                />
+              )}
+            </button>
+          );
+        })}
+        <span style={{ flex: 1 }} />
+        <span
+          className="pill pill--accent"
+          style={{ marginBottom: 8 }}
+        >
+          <Icon name="code" size={11} /> {lang}
+        </span>
       </div>
 
-      <div className="border-x flex-1 min-h-0">
+      {/* Task description */}
+      <div
+        style={{
+          padding: "12px 18px",
+          borderBottom: "1px solid var(--bg-line)",
+          fontSize: 12,
+          color: "var(--ink-2)",
+          lineHeight: 1.55,
+        }}
+      >
+        {active && (
+          <>
+            <div
+              className="mono upper"
+              style={{ color: "var(--accent)", marginBottom: 6 }}
+            >
+              {active.topic}
+            </div>
+            <div style={{ whiteSpace: "pre-wrap" }}>{active.prompt_text}</div>
+          </>
+        )}
+      </div>
+
+      {/* Editor */}
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          background: "oklch(0.13 0.005 60)",
+        }}
+      >
         <Editor
           height="100%"
           language={lang}
@@ -228,7 +296,6 @@ export default function CodingPanel({ session, onSubmitted }: Props) {
             setCodeById((prev) => ({ ...prev, [active.id]: v ?? "" }));
           }}
           onMount={(editor) => {
-            // C2: ловим paste-события Monaco и копим суммарное число вставленных символов.
             editor.onDidPaste((e) => {
               const id = activeIdRef.current;
               if (id === null) return;
@@ -249,37 +316,56 @@ export default function CodingPanel({ session, onSubmitted }: Props) {
             minimap: { enabled: false },
             scrollBeyondLastLine: false,
             tabSize: 2,
+            fontFamily: "var(--font-mono)",
           }}
         />
       </div>
 
-      <div className="bg-white border rounded-b-lg p-4 space-y-3">
-        <div className="flex items-center gap-3">
+      {/* Footer / actions */}
+      <div
+        style={{
+          padding: "12px 18px",
+          borderTop: "1px solid var(--bg-line)",
+          display: "flex",
+          flexDirection: "column",
+          gap: 10,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            flexWrap: "wrap",
+          }}
+        >
           <button
             type="button"
             onClick={onSubmit}
             disabled={!active || busyId !== null}
-            className="bg-brand hover:bg-brand-dark text-white px-4 py-2 rounded-lg text-sm disabled:opacity-50"
+            className="btn btn--primary btn--sm"
           >
-            {busyId === active?.id ? "Анализ..." : "Отправить решение"}
+            <Icon name="check" size={11} />
+            {busyId === active?.id ? "Анализ..." : "Отправить"}
           </button>
           <button
             type="button"
             onClick={onRun}
             disabled={!active || runningId !== null}
-            title="Запустить код в sandbox и увидеть stdout/stderr"
-            className="border border-slate-300 hover:border-slate-400 text-slate-700 px-3 py-2 rounded-lg text-sm disabled:opacity-50"
+            className="btn btn--sm"
+            title="Запустить код в sandbox"
           >
+            <Icon name="play" size={11} />
             {runningId === active?.id ? "Запуск..." : "Запустить"}
           </button>
           {activeResult && (
             <span
-              className={`text-xs px-2 py-1 rounded ${
+              className={`pill ${
                 activeResult.verdict === "correct"
-                  ? "bg-emerald-100 text-emerald-800"
+                  ? "pill--accent"
                   : activeResult.verdict === "partial"
-                  ? "bg-amber-100 text-amber-800"
-                  : "bg-rose-100 text-rose-800"
+                    ? "pill--warn"
+                    : "pill--danger"
               }`}
             >
               {activeResult.verdict}
@@ -292,29 +378,73 @@ export default function CodingPanel({ session, onSubmitted }: Props) {
             />
           )}
         </div>
-        {activeError && <div className="text-rose-600 text-sm">{activeError}</div>}
+        {activeError && (
+          <div
+            style={{
+              fontSize: 12,
+              color: "oklch(0.78 0.16 25)",
+              padding: "8px 10px",
+              background: "var(--danger-soft)",
+              border: "1px solid oklch(0.40 0.10 25)",
+              borderRadius: "var(--r-2)",
+            }}
+          >
+            {activeError}
+          </div>
+        )}
         {activeRunOutput && (
-          <div className="space-y-2">
-            <div className="text-xs text-slate-500">
-              Запуск: exit={activeRunOutput.exit_code}, {activeRunOutput.duration_ms} мс
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <div className="mono" style={{ fontSize: 11, color: "var(--ink-3)" }}>
+              exit={activeRunOutput.exit_code} · {activeRunOutput.duration_ms} мс
               {activeRunOutput.timed_out && " · TIMEOUT"}
               {activeRunOutput.truncated && " · вывод обрезан"}
             </div>
             {activeRunOutput.stdout && (
-              <pre className="bg-slate-900 text-emerald-100 text-xs rounded p-3 overflow-auto max-h-48 whitespace-pre-wrap">
+              <pre
+                style={{
+                  background: "oklch(0.13 0.005 60)",
+                  color: "var(--accent)",
+                  fontSize: 11,
+                  padding: 10,
+                  borderRadius: "var(--r-2)",
+                  border: "1px solid var(--bg-line)",
+                  maxHeight: 160,
+                  overflow: "auto",
+                  whiteSpace: "pre-wrap",
+                  margin: 0,
+                  fontFamily: "var(--font-mono)",
+                }}
+              >
                 {activeRunOutput.stdout}
               </pre>
             )}
             {activeRunOutput.stderr && (
-              <pre className="bg-rose-950 text-rose-100 text-xs rounded p-3 overflow-auto max-h-48 whitespace-pre-wrap">
+              <pre
+                style={{
+                  background: "var(--danger-soft)",
+                  color: "oklch(0.85 0.20 25)",
+                  fontSize: 11,
+                  padding: 10,
+                  borderRadius: "var(--r-2)",
+                  border: "1px solid oklch(0.40 0.10 25)",
+                  maxHeight: 160,
+                  overflow: "auto",
+                  whiteSpace: "pre-wrap",
+                  margin: 0,
+                  fontFamily: "var(--font-mono)",
+                }}
+              >
                 {activeRunOutput.stderr}
               </pre>
             )}
           </div>
         )}
         {activeResult?.rationale && (
-          <div className="text-sm text-slate-700 bg-slate-50 border rounded p-3 whitespace-pre-wrap">
-            {activeResult.rationale}
+          <div className="insight" style={{ fontSize: 12 }}>
+            <div className="insight__icon">i</div>
+            <div style={{ flex: 1, whiteSpace: "pre-wrap", color: "var(--ink-2)" }}>
+              {activeResult.rationale}
+            </div>
           </div>
         )}
       </div>
@@ -334,15 +464,10 @@ export function PasteBadge({
   const heavy = ratio >= 0.7;
   return (
     <span
-      title={`Из буфера обмена вставлено ${pasteChars} символов из ${codeLen} (~${percent}%)`}
-      className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded border ${
-        heavy
-          ? "bg-rose-50 border-rose-200 text-rose-800"
-          : "bg-amber-50 border-amber-200 text-amber-800"
-      }`}
+      title={`Вставлено ${pasteChars} символов из ${codeLen} (~${percent}%)`}
+      className={`pill ${heavy ? "pill--danger" : "pill--warn"}`}
     >
-      <span aria-hidden>📋</span>
-      Буфер обмена: {pasteChars} симв · {percent}%
+      📋 буфер: {pasteChars} симв · {percent}%
     </span>
   );
 }

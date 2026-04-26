@@ -1,7 +1,9 @@
-import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Editor from "@monaco-editor/react";
 import { api } from "../../api/client";
+import { useAuth } from "../../auth/AuthProvider";
+import Icon from "../../components/Icon";
 const STARTER = {
     python: "# напиши решение здесь\n\n",
     javascript: "// напиши решение здесь\n\n",
@@ -9,8 +11,9 @@ const STARTER = {
     go: "package main\n\nfunc main() {\n}\n",
     java: "public class Solution {\n  public static void main(String[] args) {\n  }\n}\n",
 };
-const SANDBOX_LANGS = new Set(["python", "py", "python3"]);
 export default function CodingPanel({ session, onSubmitted }) {
+    const { user } = useAuth();
+    const isAdmin = user?.role === "admin";
     const lang = (session.coding_task_language || "python").toLowerCase();
     const codingItems = useMemo(() => session.items
         .filter((i) => i.type === "coding")
@@ -26,8 +29,14 @@ export default function CodingPanel({ session, onSubmitted }) {
     const [resultById, setResultById] = useState(() => {
         const init = {};
         for (const it of codingItems) {
-            if (it.verdict)
-                init[it.id] = { verdict: it.verdict, rationale: it.rationale };
+            if (it.verdict) {
+                init[it.id] = {
+                    verdict: it.verdict,
+                    rationale: it.rationale,
+                    pasteChars: it.paste_chars,
+                    codeLen: it.answer_text?.length,
+                };
+            }
         }
         return init;
     });
@@ -40,7 +49,6 @@ export default function CodingPanel({ session, onSubmitted }) {
     useEffect(() => {
         activeIdRef.current = activeId;
     }, [activeId]);
-    // Сбрасываем счётчик вставленных символов при смене сессии (другая интервью-сессия = чистый счёт).
     useEffect(() => {
         setPasteCharsById({});
         setRunOutputById({});
@@ -74,7 +82,12 @@ export default function CodingPanel({ session, onSubmitted }) {
             });
             setResultById((prev) => ({
                 ...prev,
-                [active.id]: { verdict: r.data.verdict || "incorrect", rationale: r.data.rationale },
+                [active.id]: {
+                    verdict: r.data.verdict || "incorrect",
+                    rationale: r.data.rationale,
+                    pasteChars: r.data.paste_chars,
+                    codeLen: r.data.answer_text?.length,
+                },
             }));
             onSubmitted?.(r.data);
         }
@@ -108,28 +121,69 @@ export default function CodingPanel({ session, onSubmitted }) {
         }
     }
     if (codingItems.length === 0) {
-        return (_jsx("div", { className: "flex flex-col h-full bg-white border rounded-lg p-4 text-sm text-slate-500", children: "\u041A\u043E\u0434\u0438\u043D\u0433-\u0437\u0430\u0434\u0430\u0447\u0438 \u043E\u0442\u0441\u0443\u0442\u0441\u0442\u0432\u0443\u044E\u0442 \u0432 \u0441\u0435\u0441\u0441\u0438\u0438." }));
+        return (_jsx("div", { className: "card", style: {
+                display: "flex",
+                flexDirection: "column",
+                padding: 20,
+                fontSize: 13,
+                color: "var(--ink-3)",
+                height: "100%",
+            }, children: "\u041A\u043E\u0434\u0438\u043D\u0433-\u0437\u0430\u0434\u0430\u0447\u0438 \u043E\u0442\u0441\u0443\u0442\u0441\u0442\u0432\u0443\u044E\u0442 \u0432 \u0441\u0435\u0441\u0441\u0438\u0438." }));
     }
     const activeResult = active ? resultById[active.id] : null;
     const activeError = active ? errorById[active.id] : "";
     const activeRunOutput = active ? runOutputById[active.id] : null;
-    const sandboxAvailable = SANDBOX_LANGS.has(lang);
-    return (_jsxs("div", { className: "flex flex-col h-full", children: [_jsxs("div", { className: "bg-white border rounded-t-lg", children: [_jsx("div", { className: "flex items-center gap-2 border-b px-3 pt-3", children: codingItems.map((it, idx) => {
-                            const result = resultById[it.id];
-                            const isActive = it.id === activeId;
-                            return (_jsxs("button", { type: "button", onClick: () => setActiveId(it.id), className: `flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-t-lg border-b-2 -mb-px transition-colors ${isActive
-                                    ? "border-brand text-slate-900 bg-white"
-                                    : "border-transparent text-slate-500 hover:text-slate-800"}`, children: [_jsxs("span", { className: "text-xs text-slate-400", children: ["#", idx + 1] }), _jsx("span", { className: "font-medium", children: it.topic }), result && (_jsx("span", { className: `ml-1 inline-block w-2 h-2 rounded-full ${result.verdict === "correct"
-                                            ? "bg-emerald-500"
+    return (_jsxs("div", { className: "card", style: {
+            display: "flex",
+            flexDirection: "column",
+            padding: 0,
+            overflow: "hidden",
+            height: "100%",
+            minHeight: 0,
+        }, children: [_jsxs("div", { style: {
+                    padding: "10px 16px 0",
+                    borderBottom: "1px solid var(--bg-line)",
+                    display: "flex",
+                    gap: 4,
+                    alignItems: "flex-end",
+                }, children: [codingItems.map((it, idx) => {
+                        const result = resultById[it.id];
+                        const isActive = it.id === activeId;
+                        return (_jsxs("button", { type: "button", onClick: () => setActiveId(it.id), style: {
+                                padding: "8px 14px",
+                                fontSize: 12,
+                                fontWeight: 500,
+                                color: isActive ? "var(--ink-1)" : "var(--ink-3)",
+                                background: "transparent",
+                                border: "none",
+                                borderBottom: `2px solid ${isActive ? "var(--accent)" : "transparent"}`,
+                                marginBottom: -1,
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 6,
+                                cursor: "pointer",
+                            }, children: [_jsxs("span", { className: "mono", style: { color: "var(--ink-4)" }, children: ["#", idx + 1] }), _jsx("span", { children: it.topic }), result && (_jsx("span", { className: "dot", style: {
+                                        background: result.verdict === "correct"
+                                            ? "var(--accent)"
                                             : result.verdict === "partial"
-                                                ? "bg-amber-500"
-                                                : "bg-rose-500"}`, title: result.verdict }))] }, it.id));
-                        }) }), _jsxs("div", { className: "p-4", children: [_jsx("div", { className: "flex items-center justify-between mb-2", children: _jsxs("h3", { className: "font-semibold", children: ["\u041B\u0430\u0439\u0432-\u043A\u043E\u0434\u0438\u043D\u0433 (", lang, ")", active && _jsxs("span", { className: "text-slate-400 font-normal", children: [" \u2014 \u0442\u0435\u043C\u0430: ", active.topic] })] }) }), active && (_jsx("p", { className: "text-sm text-slate-700 whitespace-pre-wrap", children: active.prompt_text }))] })] }), _jsx("div", { className: "border-x flex-1 min-h-0", children: _jsx(Editor, { height: "100%", language: lang, value: active ? codeById[active.id] ?? "" : "", onChange: (v) => {
+                                                ? "var(--warn)"
+                                                : "var(--danger)",
+                                    }, title: result.verdict }))] }, it.id));
+                    }), _jsx("span", { style: { flex: 1 } }), _jsxs("span", { className: "pill pill--accent", style: { marginBottom: 8 }, children: [_jsx(Icon, { name: "code", size: 11 }), " ", lang] })] }), _jsx("div", { style: {
+                    padding: "12px 18px",
+                    borderBottom: "1px solid var(--bg-line)",
+                    fontSize: 12,
+                    color: "var(--ink-2)",
+                    lineHeight: 1.55,
+                }, children: active && (_jsxs(_Fragment, { children: [_jsx("div", { className: "mono upper", style: { color: "var(--accent)", marginBottom: 6 }, children: active.topic }), _jsx("div", { style: { whiteSpace: "pre-wrap" }, children: active.prompt_text })] })) }), _jsx("div", { style: {
+                    flex: 1,
+                    minHeight: 0,
+                    background: "oklch(0.13 0.005 60)",
+                }, children: _jsx(Editor, { height: "100%", language: lang, value: active ? codeById[active.id] ?? "" : "", onChange: (v) => {
                         if (!active)
                             return;
                         setCodeById((prev) => ({ ...prev, [active.id]: v ?? "" }));
                     }, onMount: (editor) => {
-                        // C2: ловим paste-события Monaco и копим суммарное число вставленных символов.
                         editor.onDidPaste((e) => {
                             const id = activeIdRef.current;
                             if (id === null)
@@ -151,9 +205,58 @@ export default function CodingPanel({ session, onSubmitted }) {
                         minimap: { enabled: false },
                         scrollBeyondLastLine: false,
                         tabSize: 2,
-                    } }) }), _jsxs("div", { className: "bg-white border rounded-b-lg p-4 space-y-3", children: [_jsxs("div", { className: "flex items-center gap-3", children: [_jsx("button", { type: "button", onClick: onSubmit, disabled: !active || busyId !== null, className: "bg-brand hover:bg-brand-dark text-white px-4 py-2 rounded-lg text-sm disabled:opacity-50", children: busyId === active?.id ? "Анализ..." : "Отправить решение" }), sandboxAvailable && (_jsx("button", { type: "button", onClick: onRun, disabled: !active || runningId !== null, title: "\u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u043A\u043E\u0434 \u0432 sandbox \u0438 \u0443\u0432\u0438\u0434\u0435\u0442\u044C stdout/stderr", className: "border border-slate-300 hover:border-slate-400 text-slate-700 px-3 py-2 rounded-lg text-sm disabled:opacity-50", children: runningId === active?.id ? "Запуск..." : "Запустить" })), activeResult && (_jsx("span", { className: `text-xs px-2 py-1 rounded ${activeResult.verdict === "correct"
-                                    ? "bg-emerald-100 text-emerald-800"
+                        fontFamily: "var(--font-mono)",
+                    } }) }), _jsxs("div", { style: {
+                    padding: "12px 18px",
+                    borderTop: "1px solid var(--bg-line)",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 10,
+                }, children: [_jsxs("div", { style: {
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            flexWrap: "wrap",
+                        }, children: [_jsxs("button", { type: "button", onClick: onSubmit, disabled: !active || busyId !== null, className: "btn btn--primary btn--sm", children: [_jsx(Icon, { name: "check", size: 11 }), busyId === active?.id ? "Анализ..." : "Отправить"] }), _jsxs("button", { type: "button", onClick: onRun, disabled: !active || runningId !== null, className: "btn btn--sm", title: "\u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u043A\u043E\u0434 \u0432 sandbox", children: [_jsx(Icon, { name: "play", size: 11 }), runningId === active?.id ? "Запуск..." : "Запустить"] }), activeResult && (_jsx("span", { className: `pill ${activeResult.verdict === "correct"
+                                    ? "pill--accent"
                                     : activeResult.verdict === "partial"
-                                        ? "bg-amber-100 text-amber-800"
-                                        : "bg-rose-100 text-rose-800"}`, children: activeResult.verdict }))] }), activeError && _jsx("div", { className: "text-rose-600 text-sm", children: activeError }), activeRunOutput && (_jsxs("div", { className: "space-y-2", children: [_jsxs("div", { className: "text-xs text-slate-500", children: ["\u0417\u0430\u043F\u0443\u0441\u043A: exit=", activeRunOutput.exit_code, ", ", activeRunOutput.duration_ms, " \u043C\u0441", activeRunOutput.timed_out && " · TIMEOUT", activeRunOutput.truncated && " · вывод обрезан"] }), activeRunOutput.stdout && (_jsx("pre", { className: "bg-slate-900 text-emerald-100 text-xs rounded p-3 overflow-auto max-h-48 whitespace-pre-wrap", children: activeRunOutput.stdout })), activeRunOutput.stderr && (_jsx("pre", { className: "bg-rose-950 text-rose-100 text-xs rounded p-3 overflow-auto max-h-48 whitespace-pre-wrap", children: activeRunOutput.stderr }))] })), activeResult?.rationale && (_jsx("div", { className: "text-sm text-slate-700 bg-slate-50 border rounded p-3 whitespace-pre-wrap", children: activeResult.rationale }))] })] }));
+                                        ? "pill--warn"
+                                        : "pill--danger"}`, children: activeResult.verdict })), isAdmin && activeResult && (activeResult.pasteChars ?? 0) > 0 && (_jsx(PasteBadge, { pasteChars: activeResult.pasteChars ?? 0, codeLen: activeResult.codeLen ?? 0 }))] }), activeError && (_jsx("div", { style: {
+                            fontSize: 12,
+                            color: "oklch(0.78 0.16 25)",
+                            padding: "8px 10px",
+                            background: "var(--danger-soft)",
+                            border: "1px solid oklch(0.40 0.10 25)",
+                            borderRadius: "var(--r-2)",
+                        }, children: activeError })), activeRunOutput && (_jsxs("div", { style: { display: "flex", flexDirection: "column", gap: 6 }, children: [_jsxs("div", { className: "mono", style: { fontSize: 11, color: "var(--ink-3)" }, children: ["exit=", activeRunOutput.exit_code, " \u00B7 ", activeRunOutput.duration_ms, " \u043C\u0441", activeRunOutput.timed_out && " · TIMEOUT", activeRunOutput.truncated && " · вывод обрезан"] }), activeRunOutput.stdout && (_jsx("pre", { style: {
+                                    background: "oklch(0.13 0.005 60)",
+                                    color: "var(--accent)",
+                                    fontSize: 11,
+                                    padding: 10,
+                                    borderRadius: "var(--r-2)",
+                                    border: "1px solid var(--bg-line)",
+                                    maxHeight: 160,
+                                    overflow: "auto",
+                                    whiteSpace: "pre-wrap",
+                                    margin: 0,
+                                    fontFamily: "var(--font-mono)",
+                                }, children: activeRunOutput.stdout })), activeRunOutput.stderr && (_jsx("pre", { style: {
+                                    background: "var(--danger-soft)",
+                                    color: "oklch(0.85 0.20 25)",
+                                    fontSize: 11,
+                                    padding: 10,
+                                    borderRadius: "var(--r-2)",
+                                    border: "1px solid oklch(0.40 0.10 25)",
+                                    maxHeight: 160,
+                                    overflow: "auto",
+                                    whiteSpace: "pre-wrap",
+                                    margin: 0,
+                                    fontFamily: "var(--font-mono)",
+                                }, children: activeRunOutput.stderr }))] })), activeResult?.rationale && (_jsxs("div", { className: "insight", style: { fontSize: 12 }, children: [_jsx("div", { className: "insight__icon", children: "i" }), _jsx("div", { style: { flex: 1, whiteSpace: "pre-wrap", color: "var(--ink-2)" }, children: activeResult.rationale })] }))] })] }));
+}
+export function PasteBadge({ pasteChars, codeLen, }) {
+    const ratio = codeLen > 0 ? pasteChars / codeLen : 0;
+    const percent = Math.round(ratio * 100);
+    const heavy = ratio >= 0.7;
+    return (_jsxs("span", { title: `Вставлено ${pasteChars} символов из ${codeLen} (~${percent}%)`, className: `pill ${heavy ? "pill--danger" : "pill--warn"}`, children: ["\uD83D\uDCCB \u0431\u0443\u0444\u0435\u0440: ", pasteChars, " \u0441\u0438\u043C\u0432 \u00B7 ", percent, "%"] }));
 }

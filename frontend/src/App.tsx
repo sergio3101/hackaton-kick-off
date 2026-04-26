@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useParams } from "react-router-dom";
 
 import { useAuth } from "./auth/AuthProvider";
 import Layout from "./components/Layout";
@@ -10,7 +10,6 @@ import Dashboard from "./pages/Dashboard";
 import Interview from "./pages/Interview";
 import Login from "./pages/Login";
 import MyAssignments from "./pages/MyAssignments";
-import NewSession from "./pages/NewSession";
 import Projects from "./pages/Projects";
 import Register from "./pages/Register";
 import Report from "./pages/Report";
@@ -29,6 +28,15 @@ function AdminOnly({ children }: { children: JSX.Element }) {
   const { user } = useAuth();
   if (user?.role !== "admin") return <Navigate to="/" replace />;
   return children;
+}
+
+function UserOnlyInterview() {
+  const { user } = useAuth();
+  const { id } = useParams();
+  if (user?.role === "admin") {
+    return <Navigate to={`/admin/sessions/${id}`} replace />;
+  }
+  return <Interview />;
 }
 
 export default function App() {
@@ -68,16 +76,8 @@ export default function App() {
             </AdminOnly>
           }
         />
-        <Route
-          path="/requirements/:id/new-session"
-          element={
-            <AdminOnly>
-              <NewSession />
-            </AdminOnly>
-          }
-        />
         <Route path="/sessions" element={<Sessions />} />
-        <Route path="/sessions/:id/interview" element={<Interview />} />
+        <Route path="/sessions/:id/interview" element={<UserOnlyInterview />} />
         <Route path="/sessions/:id/report" element={<Report />} />
         <Route
           path="/analytics"

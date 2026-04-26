@@ -60,13 +60,44 @@ export function useVoiceSession(sessionId) {
     const segmentStartRef = useRef(0);
     const audioRef = useRef(null);
     const pendingItemRef = useRef(null);
+    // Композитный ключ уже сыгранного вопроса, чтобы не повторять TTS на reconnect.
+    // Очищаем перед replay (там повтор — намеренный).
+    const lastPlayedKeyRef = useRef(null);
     const resetSegments = useCallback(() => {
         chunksRef.current = [];
         totalRecordedMsRef.current = 0;
         setState((s) => ({ ...s, segments: 0 }));
     }, []);
+    const stopRecorderIfActive = useCallback(() => {
+        return new Promise((resolve) => {
+            const recorder = recorderRef.current;
+            if (!recorder || recorder.state !== "recording") {
+                resolve();
+                return;
+            }
+            const prevOnStop = recorder.onstop;
+            recorder.onstop = (ev) => {
+                if (typeof prevOnStop === "function")
+                    prevOnStop.call(recorder, ev);
+                resolve();
+            };
+            recorder.stop();
+        });
+    }, []);
     const playAudio = useCallback(async (audioB64) => {
         try {
+            // Останавливаем предыдущий TTS, иначе при быстрой смене вопросов два
+            // голоса заиграют одновременно и пользователь услышит «кашу».
+            const prev = audioRef.current;
+            if (prev) {
+                try {
+                    prev.pause();
+                    prev.src = "";
+                }
+                catch {
+                    /* ignore */
+                }
+            }
             const bytes = Uint8Array.from(atob(audioB64), (c) => c.charCodeAt(0));
             const blob = new Blob([bytes], { type: "audio/mpeg" });
             const url = URL.createObjectURL(blob);
@@ -116,12 +147,33 @@ export function useVoiceSession(sessionId) {
                     isFollowUp: !!msg.is_follow_up,
                 };
                 pendingItemRef.current = q;
+                // Композитный ключ: тот же item с тем же follow-up и тем же текстом
+                // считаем за «уже сыгранный» — это случается при WS-reconnect.
+                const key = `${q.itemId}:${q.isFollowUp ? 1 : 0}:${q.text}`;
+                const alreadyPlayed = lastPlayedKeyRef.current === key;
+                const hasAudio = typeof msg.audio_b64 === "string" && msg.audio_b64.length > 0;
+                // На reconnect или text-mode сразу стоим в listening, без повторного TTS.
+                const shouldPlay = hasAudio && !alreadyPlayed;
                 chunksRef.current = [];
                 totalRecordedMsRef.current = 0;
-                setState((s) => ({ ...s, current: q, phase: "speaking", error: null, segments: 0 }));
-                playAudio(msg.audio_b64).then(() => {
-                    setState((s) => (s.current?.itemId === q.itemId ? { ...s, phase: "listening" } : s));
-                });
+                const initialPhase = shouldPlay ? "speaking" : "listening";
+                setState((s) => ({
+                    ...s,
+                    current: q,
+                    phase: initialPhase,
+                    error: null,
+                    segments: 0,
+                    recording: false,
+                }));
+                if (shouldPlay) {
+                    lastPlayedKeyRef.current = key;
+                    // Защита: TTS нового вопроса не должен играть поверх записи ответа.
+                    // Если recorder ещё работает (race с сервером — например, follow-up
+                    // пришёл до того как пользователь нажал submit) — сначала глушим запись.
+                    void stopRecorderIfActive().then(() => playAudio(msg.audio_b64).then(() => {
+                        setState((s) => (s.current?.itemId === q.itemId ? { ...s, phase: "listening" } : s));
+                    }));
+                }
             }
             else if (msg.type === "transcript") {
                 // Берём тему/вопрос из текущего state.current (а не из ref) —
@@ -313,12 +365,16 @@ export function useVoiceSession(sessionId) {
         setState((s) => ({ ...s, error: null }));
     }, [state.recording, resetSegments]);
     const skip = useCallback(() => {
+        // Запрещаем перейти к следующему вопросу пока идёт запись —
+        // иначе TTS нового вопроса начнёт играть поверх ответа.
+        if (state.recording)
+            return;
         if (!safeSend({ type: "skip" }))
             return;
         chunksRef.current = [];
         totalRecordedMsRef.current = 0;
         setState((s) => ({ ...s, phase: "thinking", error: null, segments: 0 }));
-    }, [safeSend]);
+    }, [safeSend, state.recording]);
     const submitTextAnswer = useCallback(async (text) => {
         const trimmed = text.trim();
         if (trimmed.length < 5) {
@@ -346,13 +402,18 @@ export function useVoiceSession(sessionId) {
     }, [safeSend]);
     const replay = useCallback(() => {
         // F2: повторить текущий вопрос голосом — сервер пришлёт question заново.
-        // Сбрасываем накопленные сегменты, чтобы пользователь начинал ответ с нуля.
+        // Запрещаем повтор во время записи, чтобы TTS не лёг поверх микрофона.
+        if (state.recording)
+            return;
         chunksRef.current = [];
         totalRecordedMsRef.current = 0;
+        // Сбрасываем «уже сыгранный» ключ — иначе наша анти-дублирующая защита
+        // подавит повторное воспроизведение на replay.
+        lastPlayedKeyRef.current = null;
         if (!safeSend({ type: "replay" }))
             return;
         setState((s) => ({ ...s, phase: "speaking", segments: 0, error: null }));
-    }, [safeSend]);
+    }, [safeSend, state.recording]);
     const dismissError = useCallback(() => {
         setState((s) => ({ ...s, error: null }));
     }, []);

@@ -3,6 +3,7 @@ import { useState } from "react";
 
 import { api } from "../api/client";
 import type { User, UserRole } from "../api/types";
+import Icon from "../components/Icon";
 
 interface NewUserForm {
   email: string;
@@ -49,11 +50,21 @@ export default function AdminUsers() {
   });
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Пользователи</h1>
+    <div className="page">
+      <div className="page-head">
+        <div>
+          <div className="mono upper" style={{ color: "var(--ink-3)", marginBottom: 8 }}>
+            ADMIN · USERS · {usersQ.data?.length ?? 0}
+          </div>
+          <h1 className="page-title">Пользователи</h1>
+          <div className="page-sub">
+            Управление учётными записями команды: роли, активация, сброс пароля.
+          </div>
+        </div>
+      </div>
 
-      <section className="bg-white border rounded-xl p-5 space-y-3">
-        <h2 className="font-semibold">Добавить пользователя</h2>
+      <div className="card" style={{ marginBottom: 18 }}>
+        <div className="card__label">Добавить пользователя</div>
         <form
           autoComplete="off"
           onSubmit={(e) => {
@@ -62,123 +73,190 @@ export default function AdminUsers() {
             createM.mutate(form);
           }}
         >
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          <label className="text-xs text-slate-500 flex flex-col gap-1">
-            Email
-            <input
-              className="border rounded px-3 py-2 text-sm"
-              type="email"
-              name="new-user-email"
-              autoComplete="off"
-              placeholder="user@example.com"
-              value={form.email}
-              onChange={(e) => setForm({ ...form, email: e.target.value })}
-            />
-          </label>
-          <label className="text-xs text-slate-500 flex flex-col gap-1">
-            ФИО
-            <input
-              className="border rounded px-3 py-2 text-sm"
-              type="text"
-              name="new-user-full-name"
-              autoComplete="off"
-              placeholder="Иван Иванов"
-              value={form.full_name}
-              onChange={(e) => setForm({ ...form, full_name: e.target.value })}
-            />
-          </label>
-          <label className="text-xs text-slate-500 flex flex-col gap-1">
-            Пароль
-            <input
-              className="border rounded px-3 py-2 text-sm"
-              type="password"
-              name="new-user-password"
-              autoComplete="new-password"
-              placeholder="мин. 6 символов"
-              value={form.password}
-              onChange={(e) => setForm({ ...form, password: e.target.value })}
-            />
-          </label>
-          <label className="text-xs text-slate-500 flex flex-col gap-1">
-            Роль
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+              gap: 12,
+              marginBottom: 12,
+            }}
+          >
+            <FormField label="Email">
+              <input
+                className="input"
+                type="email"
+                name="new-user-email"
+                autoComplete="off"
+                placeholder="user@example.com"
+                value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+              />
+            </FormField>
+            <FormField label="ФИО">
+              <input
+                className="input"
+                type="text"
+                name="new-user-full-name"
+                autoComplete="off"
+                placeholder="Иван Иванов"
+                value={form.full_name}
+                onChange={(e) => setForm({ ...form, full_name: e.target.value })}
+              />
+            </FormField>
+            <FormField label="Пароль">
+              <input
+                className="input"
+                type="password"
+                name="new-user-password"
+                autoComplete="new-password"
+                placeholder="мин. 6 символов"
+                value={form.password}
+                onChange={(e) => setForm({ ...form, password: e.target.value })}
+              />
+            </FormField>
+            <FormField label="Роль">
+              <select
+                className="select"
+                value={form.role}
+                onChange={(e) => setForm({ ...form, role: e.target.value as UserRole })}
+              >
+                <option value="user">user</option>
+                <option value="admin">admin</option>
+              </select>
+            </FormField>
+          </div>
+          {error && (
+            <div
+              style={{
+                fontSize: 12,
+                color: "oklch(0.78 0.16 25)",
+                marginBottom: 8,
+              }}
+            >
+              {error}
+            </div>
+          )}
+          <button
+            type="submit"
+            disabled={createM.isPending || !form.email || form.password.length < 6}
+            className="btn btn--primary btn--sm"
+          >
+            <Icon name="plus" size={11} />
+            {createM.isPending ? "Создаю..." : "Создать"}
+          </button>
+        </form>
+      </div>
+
+      <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+        <div
+          style={{
+            padding: "10px 20px",
+            borderBottom: "1px solid var(--bg-line)",
+            display: "grid",
+            gridTemplateColumns: "60px 1fr 130px 80px 80px",
+            gap: 16,
+            alignItems: "center",
+          }}
+        >
+          {["ID", "EMAIL / ФИО", "РОЛЬ", "АКТИВЕН", ""].map((h, i) => (
+            <div
+              key={i}
+              className="mono upper"
+              style={{ color: "var(--ink-3)" }}
+            >
+              {h}
+            </div>
+          ))}
+        </div>
+        {usersQ.isLoading && (
+          <div style={{ padding: 20, color: "var(--ink-3)", fontSize: 13 }}>
+            Загрузка...
+          </div>
+        )}
+        {usersQ.data?.map((u) => (
+          <div
+            key={u.id}
+            style={{
+              padding: "12px 20px",
+              borderBottom: "1px solid var(--bg-line)",
+              display: "grid",
+              gridTemplateColumns: "60px 1fr 130px 80px 80px",
+              gap: 16,
+              alignItems: "center",
+              fontSize: 13,
+            }}
+          >
+            <span className="mono" style={{ color: "var(--ink-3)" }}>
+              {u.id}
+            </span>
+            <div>
+              <div style={{ fontWeight: 500 }}>{u.email}</div>
+              <div style={{ fontSize: 11, color: "var(--ink-3)" }}>
+                {u.full_name || "—"}
+              </div>
+            </div>
             <select
-              className="border rounded px-3 py-2 text-sm"
-              value={form.role}
-              onChange={(e) => setForm({ ...form, role: e.target.value as UserRole })}
+              className="select"
+              style={{ padding: "5px 8px" }}
+              value={u.role}
+              onChange={(e) =>
+                patchM.mutate({ id: u.id, patch: { role: e.target.value as UserRole } })
+              }
             >
               <option value="user">user</option>
               <option value="admin">admin</option>
             </select>
-          </label>
-        </div>
-        {error && <div className="text-sm text-rose-600 mt-3">{error}</div>}
-        <button
-          type="submit"
-          disabled={createM.isPending || !form.email || form.password.length < 6}
-          className="bg-brand hover:bg-brand-dark text-white px-4 py-2 rounded text-sm disabled:opacity-50 mt-3"
-        >
-          {createM.isPending ? "Создаю..." : "Создать"}
-        </button>
-        </form>
-      </section>
-
-      <section className="bg-white border rounded-xl overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50">
-            <tr className="text-left">
-              <th className="px-4 py-2">ID</th>
-              <th className="px-4 py-2">Email / ФИО</th>
-              <th className="px-4 py-2">Роль</th>
-              <th className="px-4 py-2">Активен</th>
-              <th className="px-4 py-2"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {usersQ.data?.map((u) => (
-              <tr key={u.id} className="border-t">
-                <td className="px-4 py-2 text-slate-500">{u.id}</td>
-                <td className="px-4 py-2">
-                  <div>{u.email}</div>
-                  <div className="text-xs text-slate-500">{u.full_name || "—"}</div>
-                </td>
-                <td className="px-4 py-2">
-                  <select
-                    className="border rounded px-2 py-1 text-sm"
-                    value={u.role}
-                    onChange={(e) =>
-                      patchM.mutate({ id: u.id, patch: { role: e.target.value as UserRole } })
-                    }
-                  >
-                    <option value="user">user</option>
-                    <option value="admin">admin</option>
-                  </select>
-                </td>
-                <td className="px-4 py-2">
-                  <input
-                    type="checkbox"
-                    checked={u.is_active ?? true}
-                    onChange={(e) =>
-                      patchM.mutate({ id: u.id, patch: { is_active: e.target.checked } })
-                    }
-                  />
-                </td>
-                <td className="px-4 py-2 text-right">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (confirm(`Удалить пользователя ${u.email}?`)) deleteM.mutate(u.id);
-                    }}
-                    className="text-rose-600 hover:text-rose-800"
-                  >
-                    Удалить
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {usersQ.isLoading && <div className="px-4 py-3 text-slate-500">Загрузка...</div>}
-      </section>
+            <input
+              type="checkbox"
+              checked={u.is_active ?? true}
+              onChange={(e) =>
+                patchM.mutate({ id: u.id, patch: { is_active: e.target.checked } })
+              }
+            />
+            <button
+              type="button"
+              onClick={() => {
+                if (confirm(`Удалить пользователя ${u.email}?`)) deleteM.mutate(u.id);
+              }}
+              style={{
+                fontSize: 11,
+                color: "oklch(0.78 0.16 25)",
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+                textAlign: "right",
+              }}
+            >
+              <Icon name="trash" size={12} />
+            </button>
+          </div>
+        ))}
+      </div>
     </div>
+  );
+}
+
+function FormField({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 6,
+        fontSize: 11,
+        color: "var(--ink-3)",
+        textTransform: "uppercase",
+        letterSpacing: "0.08em",
+      }}
+    >
+      {label}
+      {children}
+    </label>
   );
 }

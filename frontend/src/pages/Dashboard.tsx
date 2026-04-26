@@ -8,6 +8,8 @@ import type {
   RequirementsOut,
   SessionOut,
 } from "../api/types";
+import Icon from "../components/Icon";
+import { Kpi, StatusPill, Wave } from "../components/UI";
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -32,159 +34,467 @@ export default function Dashboard() {
 
   if (!isAdmin) return <Navigate to="/me/assignments" replace />;
 
-  const isEmpty =
-    !projectsQ.isLoading && (projectsQ.data?.length ?? 0) === 0;
-  const activeSession = sessionsQ.data?.find((s) => s.status === "active");
-  const lastFinished = sessionsQ.data?.find((s) => s.status === "finished");
-  const lastProject = projectsQ.data?.[0];
+  const projects = projectsQ.data ?? [];
+  const sessions = sessionsQ.data ?? [];
+  const isEmpty = !projectsQ.isLoading && projects.length === 0;
+  const activeSession = sessions.find((s) => s.status === "active");
+  const lastFinished = sessions.find((s) => s.status === "finished");
   const overview = analyticsQ.data;
+  const activeCount = sessions.filter((s) => s.status === "active").length;
 
   if (isEmpty) {
     return <OnboardingWizard />;
   }
 
+  const trendData = overview?.trend_30d?.map((t) => t.sessions) ?? [];
+  const scoreData =
+    overview?.trend_30d?.map((t) => Math.round(t.avg_score * 100)) ?? [];
+
+  const now = new Date();
+  const dateLine = now
+    .toLocaleDateString("ru-RU", {
+      weekday: "long",
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+    })
+    .toUpperCase();
+  const timeLine = now.toLocaleTimeString("ru-RU", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Дашборд</h1>
+    <div className="page">
+      <div className="page-head">
+        <div>
+          <div className="mono upper" style={{ color: "var(--accent)", marginBottom: 8 }}>
+            <span className="dot dot--live" style={{ marginRight: 6 }} />
+            {dateLine} · {timeLine}
+          </div>
+          <h1 className="page-title">Дашборд команды</h1>
+          <div className="page-sub">
+            Привет, {user?.email?.split("@")[0]}. У вас{" "}
+            <strong style={{ color: "var(--ink-1)" }}>
+              {activeCount} активн{activeCount === 1 ? "ая" : "ых"} сесси
+              {activeCount === 1 ? "я" : "й"}
+            </strong>{" "}
+            и <strong style={{ color: "var(--ink-1)" }}>{projects.length} проект
+            {projects.length === 1 ? "" : projects.length < 5 ? "а" : "ов"}</strong> в
+            работе.
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Link to="/upload" className="btn">
+            <Icon name="upload" size={14} />
+            Загрузить ТЗ
+          </Link>
+          <Link to="/admin/assignments" className="btn btn--primary">
+            <Icon name="tag" size={14} />
+            Назначить kick-off
+          </Link>
+        </div>
+      </div>
 
       {overview && (
-        <section className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <KpiCard
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(4, 1fr)",
+            gap: 14,
+            marginBottom: 18,
+          }}
+        >
+          <Kpi
             label="Сессий завершено"
-            value={String(overview.finished_sessions)}
-            color="text-sky-700"
+            value={overview.finished_sessions}
+            delta={overview.finished_sessions > 0 ? `+${overview.finished_sessions}` : undefined}
+            deltaType="up"
+            hint="всего"
+            sparkData={trendData.length ? trendData : [0, 1, 0, 2, 1, 3, 2]}
           />
-          <KpiCard
+          <Kpi
             label="Средний score"
             value={
               overview.total_questions_answered > 0
                 ? `${Math.round(overview.overall_avg_score * 100)}%`
                 : "—"
             }
-            color="text-emerald-700"
+            hint="по ответам"
+            sparkData={scoreData.length ? scoreData : [40, 50, 45, 60, 55, 65, 70]}
           />
-          <KpiCard
-            label="Ответов на вопросы"
-            value={String(overview.total_questions_answered)}
-            color="text-slate-700"
+          <Kpi
+            label="Ответов"
+            value={overview.total_questions_answered}
+            hint="суммарно"
+            sparkData={[1, 2, 1, 3, 2, 4, 3, 5, 4, 6]}
           />
-        </section>
+          <Kpi
+            label="Активных сейчас"
+            value={activeCount}
+            hint={activeCount > 0 ? "в эфире · live" : "нет активных"}
+            sparkColor="var(--warn)"
+            sparkData={[2, 3, 2, 4, 3, 5, 4, 3, 4, 3]}
+          />
+        </div>
       )}
 
       {activeSession && (
-        <section className="bg-amber-50 border border-amber-200 rounded-xl p-5 flex items-center justify-between gap-4">
-          <div>
-            <div className="text-xs uppercase text-amber-700 font-medium">Активная сессия</div>
-            <div className="text-lg font-semibold mt-1">
-              Сессия #{activeSession.id} • уровень {activeSession.selected_level}
+        <div
+          className="card"
+          style={{ marginBottom: 18, position: "relative", overflow: "hidden", padding: 0 }}
+        >
+          <div
+            className="zebra-stripes--soft"
+            style={{ position: "absolute", inset: 0, opacity: 0.7 }}
+          />
+          <div
+            style={{
+              position: "relative",
+              padding: 22,
+              display: "grid",
+              gridTemplateColumns: "1fr auto",
+              gap: 24,
+              alignItems: "center",
+            }}
+          >
+            <div>
+              <div
+                className="mono upper"
+                style={{ color: "var(--accent)", marginBottom: 8 }}
+              >
+                <span className="dot dot--live" style={{ marginRight: 6 }} />
+                АКТИВНАЯ СЕССИЯ — В ЭФИРЕ
+              </div>
+              <div
+                style={{
+                  fontSize: 22,
+                  fontWeight: 500,
+                  letterSpacing: "-0.01em",
+                  marginBottom: 6,
+                }}
+              >
+                Сессия #{activeSession.id} · уровень{" "}
+                <span className="mono" style={{ color: "var(--accent)" }}>
+                  {activeSession.selected_level}
+                </span>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 16,
+                  color: "var(--ink-2)",
+                  fontSize: 13,
+                  flexWrap: "wrap",
+                }}
+              >
+                <span>
+                  Темы:{" "}
+                  <span className="mono">
+                    {activeSession.selected_topics.join(", ") || "—"}
+                  </span>
+                </span>
+                <span style={{ color: "var(--ink-4)" }}>·</span>
+                <span>
+                  Режим:{" "}
+                  <span className="mono">{activeSession.mode}</span>
+                </span>
+              </div>
             </div>
-            <div className="text-sm text-slate-600 mt-1">
-              Темы: {activeSession.selected_topics.join(", ")}
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <Wave bars={20} intense={0.7} />
+              <Link
+                to={`/admin/sessions/${activeSession.id}`}
+                className="btn btn--primary"
+              >
+                Открыть сессию <Icon name="arrow-right" size={14} />
+              </Link>
             </div>
           </div>
-          <Link
-            to={`/sessions/${activeSession.id}/interview`}
-            className="bg-amber-600 hover:bg-amber-700 text-white px-5 py-2.5 rounded-lg text-sm font-medium whitespace-nowrap"
-          >
-            Продолжить →
-          </Link>
-        </section>
+        </div>
       )}
 
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <ActionCard
-          title="Создать сессию"
-          subtitle={lastProject ? `по «${lastProject.title}»` : "выберите проект"}
-          to={
-            lastProject
-              ? `/requirements/${lastProject.id}/new-session`
-              : "/projects"
-          }
-          primary
-        />
-        <ActionCard
-          title="Загрузить новый ТЗ"
-          subtitle="Markdown-файлы вашего проекта"
-          to="/upload"
-        />
-        <ActionCard
-          title="Полная аналитика"
-          subtitle="Тренд, темы, слабые места"
-          to="/analytics"
-        />
-      </section>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1.4fr 1fr",
+          gap: 18,
+          alignItems: "start",
+        }}
+      >
+        <div className="card" style={{ padding: 0, minWidth: 0, overflow: "hidden" }}>
+          <div
+            style={{
+              padding: "16px 20px 12px",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              borderBottom: "1px solid var(--bg-line)",
+            }}
+          >
+            <span style={{ fontWeight: 500 }}>Последние сессии</span>
+            <Link to="/sessions" className="btn btn--sm btn--ghost">
+              Вся история <Icon name="arrow-right" size={12} />
+            </Link>
+          </div>
+          {sessions.length === 0 ? (
+            <div
+              style={{
+                padding: "32px 20px",
+                textAlign: "center",
+                color: "var(--ink-3)",
+                fontSize: 13,
+              }}
+            >
+              Сессии появятся здесь после первого запуска
+            </div>
+          ) : (
+            sessions.slice(0, 6).map((s) => (
+              <Link
+                key={s.id}
+                to={
+                  s.status === "finished"
+                    ? `/sessions/${s.id}/report`
+                    : `/admin/sessions/${s.id}`
+                }
+                style={{
+                  padding: "12px 20px",
+                  display: "grid",
+                  gridTemplateColumns: "60px 1fr 140px 80px 110px",
+                  gap: 16,
+                  alignItems: "center",
+                  borderBottom: "1px solid var(--bg-line)",
+                  fontSize: 13,
+                  cursor: "pointer",
+                }}
+              >
+                <span className="mono" style={{ color: "var(--ink-3)" }}>
+                  #{s.id}
+                </span>
+                <div>
+                  <div style={{ fontWeight: 500 }}>
+                    {s.selected_topics.slice(0, 3).join(", ") || "—"}
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--ink-3)" }}>
+                    {s.mode} · {s.target_duration_min} мин
+                  </div>
+                </div>
+                <span
+                  className="mono"
+                  style={{ color: "var(--ink-3)", fontSize: 12 }}
+                >
+                  {new Date(s.created_at).toLocaleString("ru-RU", {
+                    day: "2-digit",
+                    month: "2-digit",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </span>
+                <span className="pill" style={{ background: "transparent" }}>
+                  {s.selected_level}
+                </span>
+                <StatusPill status={s.status} />
+              </Link>
+            ))
+          )}
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 18,
+            minWidth: 0,
+          }}
+        >
+          <div className="card">
+            <div className="card__label">Быстрые действия</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <Link
+                to="/admin/assignments"
+                className="btn"
+                style={{ justifyContent: "flex-start", padding: 12 }}
+              >
+                <Icon name="tag" size={14} />
+                Назначить kick-off
+              </Link>
+              <Link
+                to="/upload"
+                className="btn"
+                style={{ justifyContent: "flex-start", padding: 12 }}
+              >
+                <Icon name="upload" size={14} />
+                Загрузить ТЗ
+              </Link>
+              <Link
+                to="/sessions"
+                className="btn"
+                style={{ justifyContent: "flex-start", padding: 12 }}
+              >
+                <Icon name="search" size={14} />
+                Найти сессию
+              </Link>
+              <Link
+                to="/analytics"
+                className="btn"
+                style={{ justifyContent: "flex-start", padding: 12 }}
+              >
+                <Icon name="chart" size={14} />
+                Аналитика
+              </Link>
+            </div>
+          </div>
+
+          <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+            <div
+              style={{
+                padding: "16px 20px 12px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                borderBottom: "1px solid var(--bg-line)",
+              }}
+            >
+              <span style={{ fontWeight: 500 }}>Проекты</span>
+              <Link to="/upload" className="btn btn--sm btn--ghost">
+                <Icon name="plus" size={12} />
+              </Link>
+            </div>
+            {projects.length === 0 ? (
+              <div
+                style={{
+                  padding: "20px",
+                  textAlign: "center",
+                  color: "var(--ink-3)",
+                  fontSize: 13,
+                }}
+              >
+                Загрузите первый ТЗ
+              </div>
+            ) : (
+              projects.slice(0, 4).map((p) => (
+                <Link
+                  key={p.id}
+                  to={`/requirements/${p.id}`}
+                  style={{
+                    padding: "14px 20px",
+                    borderBottom: "1px solid var(--bg-line)",
+                    cursor: "pointer",
+                    display: "block",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "baseline",
+                      gap: 8,
+                      marginBottom: 4,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontWeight: 500,
+                        flex: 1,
+                        minWidth: 0,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                      title={p.title}
+                    >
+                      {p.title}
+                    </div>
+                    <span
+                      className="mono"
+                      style={{
+                        fontSize: 12,
+                        color: "var(--ink-3)",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {p.topics.length} тем
+                    </span>
+                  </div>
+                  {p.summary && (
+                    <div
+                      style={{
+                        fontSize: 12,
+                        color: "var(--ink-3)",
+                        marginBottom: 8,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {p.summary}
+                    </div>
+                  )}
+                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                    {p.topics.slice(0, 4).map((t) => (
+                      <span key={t.name} className="tag">
+                        {t.name}
+                      </span>
+                    ))}
+                    {p.topics.length > 4 && (
+                      <span className="tag">+{p.topics.length - 4}</span>
+                    )}
+                  </div>
+                </Link>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
 
       {lastFinished && (
-        <section className="bg-white border rounded-xl p-5">
-          <div className="text-xs uppercase text-slate-400 mb-1">Последний отчёт</div>
-          <div className="flex items-center justify-between gap-4">
+        <div className="card" style={{ marginTop: 18 }}>
+          <div className="card__label">Последний отчёт</div>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: 12,
+            }}
+          >
             <div>
-              <div className="font-medium">
-                Сессия #{lastFinished.id} • {lastFinished.selected_level}
+              <div style={{ fontWeight: 500, fontSize: 14 }}>
+                Сессия #{lastFinished.id} · {lastFinished.selected_level}
               </div>
-              <div className="text-xs text-slate-500 mt-1">
+              <div
+                className="mono"
+                style={{ fontSize: 11, color: "var(--ink-3)", marginTop: 4 }}
+              >
                 {new Date(lastFinished.created_at).toLocaleString("ru-RU")}
               </div>
             </div>
-            <Link
-              to={`/sessions/${lastFinished.id}/report`}
-              className="text-sm text-brand hover:underline whitespace-nowrap"
-            >
-              Открыть отчёт →
+            <Link to={`/sessions/${lastFinished.id}/report`} className="btn btn--sm">
+              Открыть отчёт <Icon name="arrow-right" size={12} />
             </Link>
           </div>
-        </section>
+        </div>
       )}
     </div>
-  );
-}
-
-function KpiCard({ label, value, color }: { label: string; value: string; color: string }) {
-  return (
-    <div className="bg-white border rounded-xl p-4">
-      <div className="text-xs text-slate-500">{label}</div>
-      <div className={`text-3xl font-semibold mt-1 ${color}`}>{value}</div>
-    </div>
-  );
-}
-
-function ActionCard({
-  title,
-  subtitle,
-  to,
-  primary = false,
-}: {
-  title: string;
-  subtitle: string;
-  to: string;
-  primary?: boolean;
-}) {
-  return (
-    <Link
-      to={to}
-      className={`block rounded-xl border p-5 transition-colors ${
-        primary
-          ? "bg-brand text-white border-brand hover:bg-brand-dark"
-          : "bg-white hover:border-brand"
-      }`}
-    >
-      <div className="font-semibold">{title}</div>
-      <div className={`text-sm mt-1 ${primary ? "text-white/80" : "text-slate-500"}`}>
-        {subtitle}
-      </div>
-    </Link>
   );
 }
 
 function OnboardingWizard() {
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Добро пожаловать!</h1>
-      <p className="text-slate-600">
-        Тренировочное интервью за 3 шага. Начните с загрузки ТЗ вашего проекта.
-      </p>
+    <div className="page">
+      <div className="page-head">
+        <div>
+          <div className="mono upper" style={{ color: "var(--accent)", marginBottom: 8 }}>
+            ONBOARDING · 3 ШАГА
+          </div>
+          <h1 className="page-title">Добро пожаловать!</h1>
+          <div className="page-sub">
+            Тренировочное интервью за 3 шага. Начните с загрузки ТЗ вашего проекта.
+          </div>
+        </div>
+      </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
         <Step
           n={1}
           title="Загрузите ТЗ"
@@ -228,25 +538,36 @@ function Step({
   primary?: boolean;
 }) {
   return (
-    <div className="bg-white border rounded-xl p-5">
+    <div className="card">
       <div
-        className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold mb-3 ${
-          primary ? "bg-brand text-white" : "bg-slate-100 text-slate-600"
-        }`}
+        style={{
+          width: 32,
+          height: 32,
+          borderRadius: "50%",
+          background: primary ? "var(--accent)" : "var(--bg-2)",
+          color: primary ? "var(--accent-ink)" : "var(--ink-2)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontWeight: 600,
+          fontSize: 13,
+          marginBottom: 12,
+        }}
       >
         {n}
       </div>
-      <div className="font-semibold mb-1">{title}</div>
-      <div className="text-sm text-slate-600 mb-3 leading-relaxed">{desc}</div>
+      <div style={{ fontWeight: 500, marginBottom: 6 }}>{title}</div>
+      <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 14, lineHeight: 1.55 }}>
+        {desc}
+      </div>
       {primary ? (
-        <Link
-          to={to}
-          className="inline-block bg-brand hover:bg-brand-dark text-white px-4 py-2 rounded-lg text-sm"
-        >
-          {cta}
+        <Link to={to} className="btn btn--primary btn--sm">
+          {cta} <Icon name="arrow-right" size={12} />
         </Link>
       ) : (
-        <span className="text-xs text-slate-400">{cta}</span>
+        <span className="mono upper" style={{ color: "var(--ink-4)" }}>
+          {cta}
+        </span>
       )}
     </div>
   );

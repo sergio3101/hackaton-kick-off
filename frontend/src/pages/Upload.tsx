@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 
 import { api } from "../api/client";
 import type { RequirementsDetailOut } from "../api/types";
+import Icon from "../components/Icon";
 
 export default function Upload() {
   const navigate = useNavigate();
@@ -39,59 +40,146 @@ export default function Upload() {
   }
 
   function onPickFiles(e: React.ChangeEvent<HTMLInputElement>) {
-    const list = Array.from(e.target.files || []).filter((f) => f.name.toLowerCase().endsWith(".md"));
+    const list = Array.from(e.target.files || []).filter((f) =>
+      f.name.toLowerCase().endsWith(".md"),
+    );
     setFiles(list);
   }
 
   return (
-    <div className="max-w-3xl mx-auto">
-      <h1 className="text-2xl font-semibold mb-6">Загрузка артефактов проекта</h1>
-      <form onSubmit={onSubmit} className="bg-white border rounded-xl p-6 space-y-4">
+    <div className="page" style={{ maxWidth: 880 }}>
+      <div className="page-head">
         <div>
-          <label className="block text-sm text-slate-600 mb-1">Название проекта</label>
+          <div className="mono upper" style={{ color: "var(--accent)", marginBottom: 8 }}>
+            UPLOAD · АРТЕФАКТЫ ПРОЕКТА
+          </div>
+          <h1 className="page-title">Загрузка ТЗ</h1>
+          <div className="page-sub">
+            ИИ извлечёт темы и сгенерирует банк вопросов на матрицу тема × уровень.
+          </div>
+        </div>
+      </div>
+
+      <form
+        onSubmit={onSubmit}
+        className="card"
+        style={{ display: "flex", flexDirection: "column", gap: 16 }}
+      >
+        <div>
+          <label
+            style={{
+              display: "block",
+              fontSize: 11,
+              textTransform: "uppercase",
+              letterSpacing: "0.08em",
+              color: "var(--ink-3)",
+              marginBottom: 6,
+            }}
+          >
+            Название проекта
+          </label>
           <input
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="Например: Mobile Banking Q3"
-            className="w-full px-3 py-2 border rounded-lg"
+            placeholder="Например: FleetOps Q3"
+            className="input"
           />
         </div>
 
         <div>
-          <label className="block text-sm text-slate-600 mb-1">Markdown файлы (.md)</label>
-          <input
-            type="file"
-            multiple
-            accept=".md,text/markdown"
-            onChange={onPickFiles}
-            className="block w-full text-sm"
-          />
-          {files.length > 0 && (
-            <ul className="text-xs text-slate-500 mt-2 space-y-0.5">
-              {files.map((f) => (
-                <li key={f.name}>• {f.name} ({Math.round(f.size / 1024)} KB)</li>
-              ))}
-            </ul>
-          )}
+          <label
+            style={{
+              display: "block",
+              fontSize: 11,
+              textTransform: "uppercase",
+              letterSpacing: "0.08em",
+              color: "var(--ink-3)",
+              marginBottom: 6,
+            }}
+          >
+            Markdown файлы (.md)
+          </label>
+          <div
+            style={{
+              padding: 16,
+              border: "1px dashed var(--bg-line)",
+              borderRadius: "var(--r-2)",
+              background: "var(--bg-2)",
+            }}
+          >
+            <input
+              type="file"
+              multiple
+              accept=".md,text/markdown"
+              onChange={onPickFiles}
+              style={{
+                display: "block",
+                width: "100%",
+                fontSize: 12,
+                color: "var(--ink-2)",
+              }}
+            />
+            {files.length > 0 && (
+              <ul
+                style={{
+                  fontSize: 11,
+                  color: "var(--ink-3)",
+                  marginTop: 10,
+                  padding: 0,
+                  listStyle: "none",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 2,
+                }}
+              >
+                {files.map((f) => (
+                  <li key={f.name} className="mono">
+                    • {f.name} ({Math.round(f.size / 1024)} KB)
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
 
         <div>
-          <label className="block text-sm text-slate-600 mb-1">…или вставьте текст напрямую</label>
+          <label
+            style={{
+              display: "block",
+              fontSize: 11,
+              textTransform: "uppercase",
+              letterSpacing: "0.08em",
+              color: "var(--ink-3)",
+              marginBottom: 6,
+            }}
+          >
+            …или вставьте текст напрямую
+          </label>
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
             rows={8}
             placeholder="Описание проекта в формате Markdown..."
-            className="w-full px-3 py-2 border rounded-lg font-mono text-sm"
+            className="input textarea mono"
+            style={{ resize: "vertical", fontSize: 12 }}
           />
         </div>
 
         <div>
-          <label className="block text-sm text-slate-600 mb-1">
+          <label
+            style={{
+              display: "block",
+              fontSize: 11,
+              textTransform: "uppercase",
+              letterSpacing: "0.08em",
+              color: "var(--ink-3)",
+              marginBottom: 6,
+            }}
+          >
             Вопросов на пару тема × уровень
           </label>
-          <div className="flex items-center gap-3">
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <input
               type="number"
               min={1}
@@ -99,32 +187,62 @@ export default function Upload() {
               value={questionsPerPair}
               onChange={(e) => {
                 const n = Number(e.target.value);
-                if (Number.isFinite(n)) setQuestionsPerPair(Math.max(1, Math.min(10, n)));
+                if (Number.isFinite(n))
+                  setQuestionsPerPair(Math.max(1, Math.min(10, n)));
               }}
-              className="w-20 px-3 py-2 border rounded-lg text-center"
+              className="input"
+              style={{ width: 80, textAlign: "center" }}
             />
-            <span className="text-xs text-slate-500">
-              По умолчанию 5. Диапазон 1–10. На каждую тему сгенерируется
-              {" "}
-              <strong>{questionsPerPair * 3}</strong> вопросов (junior + middle + senior).
-              Больше вопросов = дольше генерация и больше токенов.
+            <span style={{ fontSize: 12, color: "var(--ink-3)", lineHeight: 1.5 }}>
+              По умолчанию 5. На каждую тему сгенерируется{" "}
+              <strong className="mono" style={{ color: "var(--accent)" }}>
+                {questionsPerPair * 3}
+              </strong>{" "}
+              вопросов (junior + middle + senior).
             </span>
           </div>
         </div>
 
-        {error && <div className="text-rose-600 text-sm">{error}</div>}
+        {error && (
+          <div
+            style={{
+              padding: "10px 14px",
+              background: "var(--danger-soft)",
+              border: "1px solid oklch(0.40 0.10 25)",
+              borderRadius: "var(--r-2)",
+              color: "oklch(0.78 0.16 25)",
+              fontSize: 13,
+            }}
+          >
+            {error}
+          </div>
+        )}
 
-        <div className="flex justify-end">
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 12,
+            paddingTop: 4,
+          }}
+        >
+          <span className="mono" style={{ fontSize: 11, color: "var(--ink-4)" }}>
+            На генерацию уходит до 30 секунд
+          </span>
           <button
             type="submit"
             disabled={busy}
-            className="bg-brand hover:bg-brand-dark text-white px-5 py-2 rounded-lg disabled:opacity-50"
+            className="btn btn--primary btn--lg"
           >
-            {busy ? "Анализ требований и генерация банка вопросов..." : "Загрузить и сгенерировать"}
+            {busy
+              ? "Генерируем банк вопросов..."
+              : (
+                <>
+                  <Icon name="sparkle" size={14} /> Загрузить и сгенерировать
+                </>
+              )}
           </button>
-        </div>
-        <div className="text-xs text-slate-400">
-          На генерацию вопросов уходит до 30 секунд.
         </div>
       </form>
     </div>

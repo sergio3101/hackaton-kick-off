@@ -10,6 +10,7 @@ import type {
   RequirementsOut,
   User,
 } from "../api/types";
+import Icon from "../components/Icon";
 
 interface Form {
   user_id: number | null;
@@ -105,19 +106,41 @@ export default function AdminAssignments() {
   const regularUsers = usersQ.data?.filter((u) => u.role === "user") ?? [];
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Назначения кикоффов</h1>
+    <div className="page">
+      <div className="page-head">
+        <div>
+          <div
+            className="mono upper"
+            style={{ color: "var(--ink-3)", marginBottom: 8 }}
+          >
+            ADMIN · ASSIGNMENTS · {assignmentsQ.data?.length ?? 0}
+          </div>
+          <h1 className="page-title">Назначения кикоффов</h1>
+          <div className="page-sub">
+            Назначайте интервью пользователям и контролируйте статусы выполнения.
+          </div>
+        </div>
+      </div>
 
-      <section className="bg-white border rounded-xl p-5 space-y-4">
-        <h2 className="font-semibold">Назначить кикофф</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <label className="text-sm">
-            Пользователь
+      <div className="card" style={{ marginBottom: 18 }}>
+        <div className="card__label">Назначить кикофф</div>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 12,
+            marginBottom: 12,
+          }}
+        >
+          <FormField label="Пользователь">
             <select
-              className="mt-1 w-full border rounded px-3 py-2 text-sm"
+              className="select"
               value={form.user_id ?? ""}
               onChange={(e) =>
-                setForm({ ...form, user_id: e.target.value ? Number(e.target.value) : null })
+                setForm({
+                  ...form,
+                  user_id: e.target.value ? Number(e.target.value) : null,
+                })
               }
             >
               <option value="">— выбрать —</option>
@@ -127,12 +150,11 @@ export default function AdminAssignments() {
                 </option>
               ))}
             </select>
-          </label>
+          </FormField>
 
-          <label className="text-sm">
-            Проект
+          <FormField label="Проект">
             <select
-              className="mt-1 w-full border rounded px-3 py-2 text-sm"
+              className="select"
               value={form.requirements_id ?? ""}
               onChange={(e) =>
                 setForm({
@@ -149,12 +171,11 @@ export default function AdminAssignments() {
                 </option>
               ))}
             </select>
-          </label>
+          </FormField>
 
-          <label className="text-sm">
-            Уровень
+          <FormField label="Уровень">
             <select
-              className="mt-1 w-full border rounded px-3 py-2 text-sm"
+              className="select"
               value={form.selected_level}
               onChange={(e) =>
                 setForm({ ...form, selected_level: e.target.value as Level })
@@ -164,140 +185,231 @@ export default function AdminAssignments() {
               <option value="middle">middle</option>
               <option value="senior">senior</option>
             </select>
-          </label>
+          </FormField>
 
-          <label className="text-sm">
-            Режим
+          <FormField label="Режим">
             <select
-              className="mt-1 w-full border rounded px-3 py-2 text-sm"
+              className="select"
               value={form.mode}
-              onChange={(e) => setForm({ ...form, mode: e.target.value as "voice" | "text" })}
+              onChange={(e) =>
+                setForm({ ...form, mode: e.target.value as "voice" | "text" })
+              }
             >
               <option value="voice">голосовой</option>
               <option value="text">текстовый</option>
             </select>
-          </label>
+          </FormField>
         </div>
 
         {form.requirements_id != null && (
-          <div>
-            <div className="text-sm font-medium mb-2">Темы</div>
-            <div className="flex flex-wrap gap-2">
-              {availableTopics.map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => toggleTopic(t)}
-                  className={`text-sm px-3 py-1 rounded-full border ${
-                    form.selected_topics.includes(t)
-                      ? "bg-brand text-white border-brand"
-                      : "bg-white text-slate-600 hover:border-brand"
-                  }`}
-                >
-                  {t}
-                </button>
-              ))}
+          <div style={{ marginBottom: 12 }}>
+            <div
+              className="mono upper"
+              style={{ color: "var(--ink-3)", marginBottom: 6 }}
+            >
+              Темы
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {availableTopics.map((t) => {
+                const on = form.selected_topics.includes(t);
+                return (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => toggleTopic(t)}
+                    className="pill"
+                    style={{
+                      cursor: "pointer",
+                      padding: "5px 12px",
+                      background: on ? "var(--accent)" : "var(--bg-2)",
+                      color: on ? "var(--accent-ink)" : "var(--ink-2)",
+                      borderColor: on ? "var(--accent)" : "var(--bg-line)",
+                    }}
+                  >
+                    {on && <Icon name="check" size={11} />}
+                    {t}
+                  </button>
+                );
+              })}
               {availableTopics.length === 0 && (
-                <span className="text-sm text-slate-500">Темы загружаются...</span>
+                <span style={{ fontSize: 12, color: "var(--ink-3)" }}>
+                  Темы загружаются...
+                </span>
               )}
             </div>
           </div>
         )}
 
         <textarea
-          className="w-full border rounded px-3 py-2 text-sm"
+          className="input textarea"
+          style={{ resize: "vertical", marginBottom: 12 }}
           rows={2}
           placeholder="Комментарий пользователю (опционально)"
           value={form.note}
           onChange={(e) => setForm({ ...form, note: e.target.value })}
         />
 
-        {error && <div className="text-sm text-rose-600">{error}</div>}
+        {error && (
+          <div
+            style={{
+              fontSize: 12,
+              color: "oklch(0.78 0.16 25)",
+              marginBottom: 8,
+            }}
+          >
+            {error}
+          </div>
+        )}
 
         <button
           type="button"
           onClick={() => createM.mutate(form)}
           disabled={!canSubmit || createM.isPending}
-          className="bg-brand hover:bg-brand-dark text-white px-5 py-2 rounded text-sm disabled:opacity-50"
+          className="btn btn--primary"
         >
+          <Icon name="plus" size={13} />
           {createM.isPending ? "Создаю..." : "Назначить"}
         </button>
-      </section>
+      </div>
 
-      <section className="bg-white border rounded-xl overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50">
-            <tr className="text-left">
-              <th className="px-4 py-2">Пользователь</th>
-              <th className="px-4 py-2">Проект</th>
-              <th className="px-4 py-2">Уровень / темы</th>
-              <th className="px-4 py-2">Статус</th>
-              <th className="px-4 py-2"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {assignmentsQ.data?.map((a) => (
-              <tr key={a.id} className="border-t align-top">
-                <td className="px-4 py-2">
-                  <div>{a.user_email}</div>
-                  <div className="text-xs text-slate-500">{a.user_full_name || ""}</div>
-                </td>
-                <td className="px-4 py-2">{a.requirements_title}</td>
-                <td className="px-4 py-2">
-                  <div className="text-xs uppercase text-slate-500">{a.selected_level}</div>
-                  <div className="text-xs">{a.selected_topics.join(", ")}</div>
-                </td>
-                <td className="px-4 py-2">
-                  <StatusBadge status={a.status} />
-                </td>
-                <td className="px-4 py-2 text-right space-x-3">
-                  {a.session_id ? (
-                    <Link
-                      to={`/admin/sessions/${a.session_id}`}
-                      className="text-brand hover:underline"
-                    >
-                      Открыть сессию
-                    </Link>
-                  ) : (
-                    <span className="text-xs text-slate-400">сессия не начата</span>
-                  )}
-                  {a.status === "assigned" && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (confirm("Удалить назначение?")) deleteM.mutate(a.id);
-                      }}
-                      className="text-rose-600 hover:text-rose-800"
-                    >
-                      Удалить
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+        <div
+          style={{
+            padding: "10px 20px",
+            borderBottom: "1px solid var(--bg-line)",
+            display: "grid",
+            gridTemplateColumns: "1.4fr 1fr 1fr 110px 110px",
+            gap: 16,
+            alignItems: "center",
+          }}
+        >
+          {["ПОЛЬЗОВАТЕЛЬ", "ПРОЕКТ", "УРОВЕНЬ / ТЕМЫ", "СТАТУС", ""].map((h, i) => (
+            <div
+              key={i}
+              className="mono upper"
+              style={{ color: "var(--ink-3)" }}
+            >
+              {h}
+            </div>
+          ))}
+        </div>
         {assignmentsQ.isLoading && (
-          <div className="px-4 py-3 text-slate-500">Загрузка...</div>
+          <div style={{ padding: 20, color: "var(--ink-3)", fontSize: 13 }}>
+            Загрузка...
+          </div>
         )}
         {!assignmentsQ.isLoading && (assignmentsQ.data?.length ?? 0) === 0 && (
-          <div className="px-4 py-3 text-slate-500">Назначений пока нет.</div>
+          <div style={{ padding: 20, color: "var(--ink-3)", fontSize: 13 }}>
+            Назначений пока нет.
+          </div>
         )}
-      </section>
+        {assignmentsQ.data?.map((a) => (
+          <div
+            key={a.id}
+            style={{
+              padding: "12px 20px",
+              borderBottom: "1px solid var(--bg-line)",
+              display: "grid",
+              gridTemplateColumns: "1.4fr 1fr 1fr 110px 110px",
+              gap: 16,
+              alignItems: "center",
+              fontSize: 13,
+            }}
+          >
+            <div>
+              <div style={{ fontWeight: 500 }}>{a.user_email}</div>
+              <div style={{ fontSize: 11, color: "var(--ink-3)" }}>
+                {a.user_full_name || ""}
+              </div>
+            </div>
+            <div style={{ fontSize: 13 }}>{a.requirements_title}</div>
+            <div>
+              <div
+                className="mono upper"
+                style={{ color: "var(--accent)" }}
+              >
+                {a.selected_level}
+              </div>
+              <div
+                className="mono"
+                style={{
+                  fontSize: 11,
+                  color: "var(--ink-3)",
+                  marginTop: 2,
+                }}
+              >
+                {a.selected_topics.join(", ")}
+              </div>
+            </div>
+            <StatusPillSmall status={a.status} />
+            <div
+              style={{
+                display: "flex",
+                gap: 6,
+                justifyContent: "flex-end",
+              }}
+            >
+              {a.session_id ? (
+                <Link
+                  to={`/admin/sessions/${a.session_id}`}
+                  className="btn btn--sm"
+                >
+                  Открыть
+                </Link>
+              ) : a.status === "assigned" ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (confirm("Удалить назначение?")) deleteM.mutate(a.id);
+                  }}
+                  className="btn btn--sm"
+                  style={{
+                    color: "oklch(0.78 0.16 25)",
+                    borderColor: "oklch(0.40 0.10 25)",
+                  }}
+                >
+                  <Icon name="trash" size={11} />
+                </button>
+              ) : null}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const palette: Record<string, string> = {
-    assigned: "bg-slate-100 text-slate-700",
-    started: "bg-amber-100 text-amber-700",
-    completed: "bg-sky-100 text-sky-700",
-    published: "bg-emerald-100 text-emerald-700",
-  };
+function FormField({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
-    <span className={`inline-block text-xs px-2 py-0.5 rounded ${palette[status] ?? ""}`}>
-      {status}
-    </span>
+    <label
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 6,
+        fontSize: 11,
+        color: "var(--ink-3)",
+        textTransform: "uppercase",
+        letterSpacing: "0.08em",
+      }}
+    >
+      {label}
+      {children}
+    </label>
   );
+}
+
+function StatusPillSmall({ status }: { status: string }) {
+  const variant: Record<string, string> = {
+    assigned: "",
+    started: "pill--warn",
+    completed: "pill--info",
+    published: "pill--accent",
+  };
+  return <span className={`pill ${variant[status] ?? ""}`}>{status}</span>;
 }

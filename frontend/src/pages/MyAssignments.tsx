@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 import { api } from "../api/client";
 import type { AssignmentDetailOut, SessionDetailOut } from "../api/types";
+import Icon from "../components/Icon";
 
 export default function MyAssignments() {
   const qc = useQueryClient();
@@ -24,39 +25,59 @@ export default function MyAssignments() {
   });
   const startingId = startM.isPending ? (startM.variables as number) : null;
 
-  if (listQ.isLoading) return <div className="text-slate-500">Загрузка...</div>;
-
-  const data = listQ.data ?? [];
-  if (data.length === 0) {
+  if (listQ.isLoading) {
     return (
-      <div className="space-y-2">
-        <h1 className="text-2xl font-semibold">Мои кикоффы</h1>
-        <p className="text-slate-500">
-          Пока нет назначенных кикоффов. Подождите, пока администратор назначит вам интервью.
-        </p>
+      <div className="page" style={{ color: "var(--ink-3)" }}>
+        Загрузка...
       </div>
     );
   }
 
+  const data = listQ.data ?? [];
+
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Мои кикоффы</h1>
-      <div className="space-y-3">
-        {data.map((a) => (
-          <Card
-            key={a.id}
-            a={a}
-            starting={startingId === a.id}
-            disabled={startM.isPending && startingId !== a.id}
-            onStart={() => startM.mutate(a.id)}
-          />
-        ))}
+    <div className="page">
+      <div className="page-head">
+        <div>
+          <div className="mono upper" style={{ color: "var(--accent)", marginBottom: 8 }}>
+            ASSIGNMENTS · {data.length}
+          </div>
+          <h1 className="page-title">Мои кикоффы</h1>
+          <div className="page-sub">
+            Назначенные интервью и опубликованные отчёты по ним.
+          </div>
+        </div>
       </div>
+
+      {data.length === 0 ? (
+        <div
+          className="card"
+          style={{
+            padding: 40,
+            textAlign: "center",
+            color: "var(--ink-3)",
+          }}
+        >
+          Пока нет назначенных кикоффов. Подождите, пока администратор назначит вам интервью.
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {data.map((a) => (
+            <AssignmentCard
+              key={a.id}
+              a={a}
+              starting={startingId === a.id}
+              disabled={startM.isPending && startingId !== a.id}
+              onStart={() => startM.mutate(a.id)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-function Card({
+function AssignmentCard({
   a,
   onStart,
   starting,
@@ -72,50 +93,98 @@ function Card({
   const completedNotPublished = a.status === "completed";
 
   return (
-    <div className="bg-white border rounded-xl p-5">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <div className="text-xs uppercase text-slate-500">{a.selected_level}</div>
-          <div className="text-lg font-semibold mt-1">{a.requirements_title}</div>
-          <div className="text-sm text-slate-600 mt-1">
-            Темы: {a.selected_topics.join(", ") || "—"}
+    <div className="card">
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          gap: 14,
+        }}
+      >
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div
+            className="mono upper"
+            style={{ color: "var(--ink-3)", marginBottom: 6 }}
+          >
+            {a.selected_level}
+          </div>
+          <div
+            style={{
+              fontSize: 18,
+              fontWeight: 500,
+              letterSpacing: "-0.01em",
+              marginBottom: 6,
+            }}
+          >
+            {a.requirements_title}
+          </div>
+          <div style={{ fontSize: 13, color: "var(--ink-2)", marginBottom: 6 }}>
+            Темы:{" "}
+            <span className="mono">{a.selected_topics.join(", ") || "—"}</span>
           </div>
           {a.note && (
-            <div className="text-sm text-slate-600 mt-2 italic">«{a.note}»</div>
+            <div
+              style={{
+                fontSize: 12,
+                color: "var(--ink-3)",
+                fontStyle: "italic",
+                marginTop: 4,
+              }}
+            >
+              «{a.note}»
+            </div>
           )}
         </div>
-        <div className="flex flex-col items-end gap-2">
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "flex-end",
+            gap: 8,
+          }}
+        >
           <StatusBadge status={a.status} />
           {a.status === "assigned" && (
             <button
               type="button"
               onClick={onStart}
               disabled={starting || disabled}
-              className="bg-brand hover:bg-brand-dark text-white px-4 py-2 rounded text-sm disabled:opacity-50"
+              className="btn btn--primary"
             >
-              {starting ? "Запускаю..." : "Пройти интервью →"}
+              {starting ? (
+                "Запускаю..."
+              ) : (
+                <>
+                  <Icon name="play" size={13} /> Пройти интервью
+                </>
+              )}
             </button>
           )}
           {inProgress && a.session_id && (
-            <a
-              href={`/sessions/${a.session_id}/interview`}
-              className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded text-sm"
+            <Link
+              to={`/sessions/${a.session_id}/interview`}
+              className="btn btn--primary"
+              style={{ background: "var(--warn)", borderColor: "var(--warn)" }}
             >
-              Продолжить →
-            </a>
+              Продолжить <Icon name="arrow-right" size={13} />
+            </Link>
           )}
           {completedNotPublished && (
-            <span className="text-xs text-slate-500">
-              Ждём проверки администратором
+            <span
+              className="mono"
+              style={{ fontSize: 11, color: "var(--ink-3)" }}
+            >
+              ждём проверки администратором
             </span>
           )}
           {isPublished && a.session_id && (
-            <a
-              href={`/sessions/${a.session_id}/report`}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded text-sm"
+            <Link
+              to={`/sessions/${a.session_id}/report`}
+              className="btn btn--primary"
             >
-              Открыть отчёт →
-            </a>
+              <Icon name="doc" size={13} /> Открыть отчёт
+            </Link>
           )}
         </div>
       </div>
@@ -130,14 +199,14 @@ function StatusBadge({ status }: { status: string }) {
     completed: "На проверке",
     published: "Результаты доступны",
   };
-  const palette: Record<string, string> = {
-    assigned: "bg-slate-100 text-slate-700",
-    started: "bg-amber-100 text-amber-700",
-    completed: "bg-sky-100 text-sky-700",
-    published: "bg-emerald-100 text-emerald-700",
+  const variant: Record<string, string> = {
+    assigned: "",
+    started: "pill--warn",
+    completed: "pill--info",
+    published: "pill--accent",
   };
   return (
-    <span className={`text-xs px-2 py-0.5 rounded ${palette[status] ?? ""}`}>
+    <span className={`pill ${variant[status] ?? ""}`}>
       {labels[status] ?? status}
     </span>
   );

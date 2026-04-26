@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 
 import { api } from "../api/client";
 import type { RequirementsOut, RequirementsStatsOut } from "../api/types";
+import Icon from "../components/Icon";
 
 export default function Projects() {
   const { data, isLoading } = useQuery({
@@ -10,7 +11,6 @@ export default function Projects() {
     queryFn: async () => (await api.get<RequirementsOut[]>("/api/requirements")).data,
   });
 
-  // Мини-статистика по каждому проекту: загружаем параллельно.
   const statsQueries = useQueries({
     queries: (data || []).map((r) => ({
       queryKey: ["requirements-stats", r.id],
@@ -21,81 +21,158 @@ export default function Projects() {
   });
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Проекты</h1>
-        <Link
-          to="/upload"
-          className="bg-brand hover:bg-brand-dark text-white px-4 py-2 rounded-lg text-sm"
-        >
-          Новый проект
+    <div className="page">
+      <div className="page-head">
+        <div>
+          <div className="mono upper" style={{ color: "var(--ink-3)", marginBottom: 8 }}>
+            PROJECTS · {data?.length ?? 0}
+          </div>
+          <h1 className="page-title">Проекты</h1>
+          <div className="page-sub">
+            Загруженные ТЗ и сгенерированные банки вопросов.
+          </div>
+        </div>
+        <Link to="/upload" className="btn btn--primary">
+          <Icon name="plus" size={14} /> Новый проект
         </Link>
       </div>
 
-      {isLoading && <div className="text-slate-500">Загрузка...</div>}
-
-      {!isLoading && (data?.length ?? 0) === 0 && (
-        <div className="bg-white p-10 rounded-xl border text-center text-slate-500">
-          У вас ещё нет загруженных проектов.{" "}
-          <Link to="/upload" className="text-brand hover:underline">
-            Загрузить .md артефакты
-          </Link>
+      {isLoading && (
+        <div className="card" style={{ color: "var(--ink-3)", textAlign: "center" }}>
+          Загрузка...
         </div>
       )}
 
-      <div className="grid gap-4">
+      {!isLoading && (data?.length ?? 0) === 0 && (
+        <div
+          className="card"
+          style={{
+            padding: 40,
+            textAlign: "center",
+            color: "var(--ink-3)",
+          }}
+        >
+          У вас ещё нет загруженных проектов.
+          <div style={{ marginTop: 14 }}>
+            <Link to="/upload" className="btn btn--primary">
+              <Icon name="upload" size={14} /> Загрузить .md артефакты
+            </Link>
+          </div>
+        </div>
+      )}
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fill, minmax(380px, 1fr))",
+          gap: 14,
+        }}
+      >
         {data?.map((r, idx) => {
           const stats = statsQueries[idx]?.data;
           return (
-            <div key={r.id} className="bg-white p-5 rounded-xl border">
-              <div className="flex justify-between items-start gap-3">
-                <div className="flex-1 min-w-0">
-                  <h3 className="font-semibold text-lg">{r.title}</h3>
-                  <div className="text-xs text-slate-400 mt-1">
+            <div key={r.id} className="card">
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  marginBottom: 8,
+                }}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <h3
+                    style={{
+                      fontSize: 16,
+                      fontWeight: 500,
+                      letterSpacing: "-0.01em",
+                      margin: 0,
+                    }}
+                  >
+                    {r.title}
+                  </h3>
+                  <div
+                    className="mono"
+                    style={{ fontSize: 11, color: "var(--ink-3)", marginTop: 4 }}
+                  >
                     {new Date(r.created_at).toLocaleString("ru-RU")}
                   </div>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <Link
-                    to={`/requirements/${r.id}`}
-                    className="border border-slate-300 hover:border-slate-400 text-slate-700 px-3 py-1.5 rounded-lg text-sm"
-                  >
-                    Открыть
-                  </Link>
-                  <Link
-                    to={`/requirements/${r.id}/new-session`}
-                    className="bg-brand hover:bg-brand-dark text-white px-3 py-1.5 rounded-lg text-sm"
-                  >
-                    Начать интервью
-                  </Link>
-                </div>
               </div>
+
               {stats && stats.sessions_total > 0 && (
-                <div className="text-xs text-slate-500 mt-2 flex items-center gap-3 flex-wrap">
-                  <span>{stats.sessions_total} сессий</span>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 14,
+                    fontSize: 11,
+                    color: "var(--ink-3)",
+                    marginBottom: 10,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <span>
+                    <span className="mono" style={{ color: "var(--ink-1)" }}>
+                      {stats.sessions_total}
+                    </span>{" "}
+                    сессий
+                  </span>
                   {stats.sessions_finished > 0 && (
-                    <span>средний score {Math.round(stats.avg_score * 100)}%</span>
+                    <span>
+                      score{" "}
+                      <span className="mono" style={{ color: "var(--accent)" }}>
+                        {Math.round(stats.avg_score * 100)}%
+                      </span>
+                    </span>
                   )}
                   {stats.last_session_at && (
-                    <span>последняя {timeAgo(stats.last_session_at)}</span>
+                    <span>{timeAgo(stats.last_session_at)}</span>
                   )}
                 </div>
               )}
+
               {r.summary && (
-                <p className="text-slate-700 text-sm mt-3 leading-relaxed">{r.summary}</p>
+                <p
+                  style={{
+                    fontSize: 13,
+                    color: "var(--ink-2)",
+                    lineHeight: 1.55,
+                    margin: "0 0 12px",
+                  }}
+                >
+                  {r.summary}
+                </p>
               )}
+
               {r.topics.length > 0 && (
-                <div className="flex flex-wrap gap-2 mt-3">
-                  {r.topics.map((t) => (
-                    <span
-                      key={t.name}
-                      className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-xs"
-                    >
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 14 }}>
+                  {r.topics.slice(0, 8).map((t) => (
+                    <span key={t.name} className="tag">
                       {t.name}
                     </span>
                   ))}
+                  {r.topics.length > 8 && (
+                    <span className="tag">+{r.topics.length - 8}</span>
+                  )}
                 </div>
               )}
+
+              <div style={{ display: "flex", gap: 8 }}>
+                <Link
+                  to={`/requirements/${r.id}`}
+                  className="btn btn--sm"
+                  style={{ flex: 1, justifyContent: "center" }}
+                >
+                  Открыть
+                </Link>
+                <Link
+                  to="/admin/assignments"
+                  className="btn btn--primary btn--sm"
+                  style={{ flex: 1, justifyContent: "center" }}
+                >
+                  <Icon name="tag" size={11} /> Назначить
+                </Link>
+              </div>
             </div>
           );
         })}
