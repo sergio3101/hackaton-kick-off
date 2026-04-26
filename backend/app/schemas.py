@@ -35,15 +35,18 @@ class AdminUserCreate(BaseModel):
 
 
 class AdminUserPatch(BaseModel):
+    email: EmailStr | None = None
     full_name: str | None = Field(default=None, max_length=255)
     role: UserRole | None = None
     is_active: bool | None = None
     password: str | None = Field(default=None, min_length=6, max_length=128)
 
 
-# OpenAI TTS поддерживаемые голоса (whitelist для валидации).
+# OpenAI Realtime API поддерживаемые голоса (whitelist для валидации).
+# Не путать с TTS-1 — там список другой; см. также realtime.REALTIME_VOICES.
 ALLOWED_VOICES: tuple[str, ...] = (
-    "alloy", "echo", "fable", "onyx", "nova", "shimmer",
+    "alloy", "ash", "ballad", "coral", "echo",
+    "sage", "shimmer", "verse", "marin", "cedar",
 )
 # Модели чата, которые admin может выбрать на форме назначения.
 # Сохраняется консервативно: совместимые с json_schema response_format.

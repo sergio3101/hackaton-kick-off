@@ -82,6 +82,10 @@ def update_user(
     user = db.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
+    if payload.email is not None and payload.email != user.email:
+        if db.query(User).filter(User.email == payload.email, User.id != user_id).first():
+            raise HTTPException(status_code=409, detail="Email уже используется")
+        user.email = payload.email
     if payload.full_name is not None:
         user.full_name = payload.full_name.strip()
     if payload.role is not None:

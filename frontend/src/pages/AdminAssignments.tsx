@@ -31,13 +31,18 @@ interface Form {
 
 // Подписи на русском для комбобокса голоса (озвучивает интервьюер).
 // Описания — короткие маркеры тембра, чтобы admin понимал что выбрать.
+// Список = голоса OpenAI Realtime API.
 const VOICE_LABELS: Record<TtsVoice, string> = {
   alloy: "alloy — нейтральный",
+  ash: "ash — низкий мужской",
+  ballad: "ballad — мягкий мужской",
+  coral: "coral — тёплый женский",
   echo: "echo — глубокий мужской",
-  fable: "fable — британский акцент",
-  onyx: "onyx — низкий мужской",
-  nova: "nova — мягкий женский",
+  sage: "sage — спокойный женский",
   shimmer: "shimmer — звонкий женский",
+  verse: "verse — выразительный",
+  marin: "marin — живой женский",
+  cedar: "cedar — собранный мужской",
 };
 
 const MODEL_LABELS: Record<LlmModel, string> = {

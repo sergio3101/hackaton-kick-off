@@ -42,6 +42,29 @@ WHISPER_PRICE_PER_MIN: dict[str, float] = {
 # Грубая оценка длительности webm-аудио, если duration не передан.
 WEBM_BYTES_PER_SECOND = 2500
 
+# OpenAI Realtime API: расценки за 1M токенов, отдельно текст/аудио и in/out.
+# Источник: openai.com/api/pricing на момент 2026-Q1 (gpt-4o-realtime-preview).
+# Если используется новая ревизия модели — fallback по prefix-match на базовый.
+REALTIME_PRICING_PER_M_TOKENS: dict[str, dict[str, float]] = {
+    "gpt-4o-realtime-preview": {
+        "text_input": 5.00,
+        "text_output": 20.00,
+        "audio_input": 100.00,
+        "audio_output": 200.00,
+    },
+}
+
+
+def _resolve_realtime_rate(model: str) -> dict[str, float] | None:
+    rate = REALTIME_PRICING_PER_M_TOKENS.get(model)
+    if rate is not None:
+        return rate
+    # gpt-4o-realtime-preview-2024-12-17 → matches gpt-4o-realtime-preview
+    for key, value in REALTIME_PRICING_PER_M_TOKENS.items():
+        if model.startswith(key):
+            return value
+    return None
+
 
 def compute_chat_cost_usd(model: str, prompt_tokens: int, completion_tokens: int) -> float:
     rate = PRICING_PER_M_TOKENS.get(model)
@@ -151,6 +174,76 @@ def record_tts_usage(
         cost_usd=cost,
         session_id=session_id,
         db=db,
+    )
+
+
+def compute_realtime_cost_usd(
+    model: str,
+    *,
+    text_in: int,
+    text_out: int,
+    audio_in: int,
+    audio_out: int,
+    cached_text_in: int = 0,
+    cached_audio_in: int = 0,
+) -> float:
+    """Стоимость одного response Realtime API.
+
+    cached_*_in — кешированные input-токены, тарифицируются вдвое дешевле
+    (OpenAI Realtime cache discount). Если pricing для модели неизвестен,
+    возвращаем 0.0 — не падаем.
+    """
+    rate = _resolve_realtime_rate(model)
+    if rate is None:
+        logger.warning("realtime pricing unknown for model=%s, cost=0", model)
+        return 0.0
+    fresh_text_in = max(0, text_in - cached_text_in)
+    fresh_audio_in = max(0, audio_in - cached_audio_in)
+    cost = (
+        fresh_text_in * rate["text_input"]
+        + cached_text_in * rate["text_input"] * 0.5
+        + fresh_audio_in * rate["audio_input"]
+        + cached_audio_in * rate["audio_input"] * 0.5
+        + text_out * rate["text_output"]
+        + audio_out * rate["audio_output"]
+    ) / 1_000_000
+    return cost
+
+
+def record_realtime_usage(
+    *,
+    model: str,
+    text_in: int,
+    text_out: int,
+    audio_in: int,
+    audio_out: int,
+    cached_text_in: int = 0,
+    cached_audio_in: int = 0,
+    session_id: int | None = None,
+    db: Session | None = None,
+) -> None:
+    """Записать usage одного Realtime response в LLMUsage(kind='realtime')."""
+    cost = compute_realtime_cost_usd(
+        model,
+        text_in=text_in, text_out=text_out,
+        audio_in=audio_in, audio_out=audio_out,
+        cached_text_in=cached_text_in, cached_audio_in=cached_audio_in,
+    )
+    _record(
+        kind="realtime",
+        model=model,
+        # Кладём ВСЕ input-токены (text+audio) в prompt_tokens, output — в completion.
+        # Это сохраняет совместимость с агрегатами; разбивку по каналам не теряем,
+        # потому что cost_usd уже посчитан по точным тарифам.
+        prompt_tokens=text_in + audio_in,
+        completion_tokens=text_out + audio_out,
+        cost_usd=cost,
+        session_id=session_id,
+        db=db,
+    )
+    logger.info(
+        "realtime usage: model=%s text_in=%d audio_in=%d text_out=%d audio_out=%d cost=$%.4f",
+        model, text_in, audio_in, text_out, audio_out, cost,
     )
 
 

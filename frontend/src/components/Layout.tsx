@@ -38,6 +38,11 @@ export default function Layout() {
     { to: "/sessions", label: "Мои отчёты", icon: "doc" },
   ];
 
+  // Раздел «Поддержка» — общий для admin и user.
+  const supportItems: NavItem[] = [
+    { to: "/docs", label: "Документация", icon: "doc" },
+  ];
+
   const initials = useMemo(() => {
     const e = user?.email || "";
     const local = e.split("@")[0] || "";
@@ -63,6 +68,7 @@ export default function Layout() {
     if (path === "/admin/assignments") return ["Назначения"];
     if (path.startsWith("/admin/sessions/")) return ["Сессии", "Ревью"];
     if (path === "/me/assignments") return ["Мои кикоффы"];
+    if (path === "/docs") return ["Поддержка", "Документация"];
     return ["Kick-off Prep"];
   }, [location.pathname]);
 
@@ -108,6 +114,16 @@ export default function Layout() {
             ))}
           </>
         )}
+
+        <div className="sidebar__section">Поддержка</div>
+        {supportItems.map((it) => (
+          <NavLink key={it.to} to={it.to} className={linkCls}>
+            <span className="nav-item__icon">
+              <Icon name={it.icon} size={16} />
+            </span>
+            <span>{it.label}</span>
+          </NavLink>
+        ))}
 
         <div className="sidebar__footer">
           <div className="user-chip">

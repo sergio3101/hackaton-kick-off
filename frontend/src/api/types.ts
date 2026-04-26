@@ -26,6 +26,14 @@ export interface User {
   created_at: string;
 }
 
+export interface UserPatch {
+  email?: string;
+  full_name?: string;
+  password?: string;
+  role?: UserRole;
+  is_active?: boolean;
+}
+
 export interface AssignmentOut {
   id: number;
   admin_id: number | null;
@@ -42,13 +50,20 @@ export interface AssignmentOut {
   created_at: string;
 }
 
+// Голоса OpenAI Realtime API (актуальный список — не совпадает с TTS-1).
+// Старые имена ('onyx'/'fable'/'nova') не поддерживаются — для уже
+// сохранённых assignment'ов backend упадёт на дефолтный 'alloy'.
 export const TTS_VOICES = [
   "alloy",
+  "ash",
+  "ballad",
+  "coral",
   "echo",
-  "fable",
-  "onyx",
-  "nova",
+  "sage",
   "shimmer",
+  "verse",
+  "marin",
+  "cedar",
 ] as const;
 export type TtsVoice = (typeof TTS_VOICES)[number];
 

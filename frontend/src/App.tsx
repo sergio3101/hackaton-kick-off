@@ -8,6 +8,7 @@ import AdminSessionReview from "./pages/AdminSessionReview";
 import AdminUsers from "./pages/AdminUsers";
 import Analytics from "./pages/Analytics";
 import Dashboard from "./pages/Dashboard";
+import Docs from "./pages/Docs";
 import Interview from "./pages/Interview";
 import Login from "./pages/Login";
 import MyAssignments from "./pages/MyAssignments";
@@ -126,6 +127,7 @@ function AppRoutes() {
           }
         />
         <Route path="/me/assignments" element={<MyAssignments />} />
+        <Route path="/docs" element={<Docs />} />
         {/* Legacy redirect-friendly aliases */}
         <Route path="/history" element={<Sessions />} />
       </Route>
