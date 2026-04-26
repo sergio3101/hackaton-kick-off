@@ -6,18 +6,28 @@
   {"type": "answer_text", "text": ...}  — отправить ответ текстом/кодом (без STT).
                                           Полезно для вопросов, требующих кодового
                                           ответа: кандидат пишет в редакторе и шлёт.
-  {"type": "skip"}                      — пометить текущий вопрос пропущенным.
-  {"type": "next"}                      — продолжить к следующему после follow-up.
+  {"type": "skip"}                      — пометить текущий вопрос пропущенным
+                                          (или, если активен follow-up, — пропустить
+                                          follow-up без затирания вердикта).
+  {"type": "next"}                      — перейти к следующему вопросу или follow-up.
+                                          Шлётся в ответ на серверный awaiting_next.
   {"type": "replay"}                    — повторно проиграть текущий вопрос (TTS),
                                           без перетранскрипции и оценки.
   {"type": "finish"}                    — завершить досрочно.
 
 Сервер — клиент:
   {"type": "question", "item_id": int, "idx": int, "topic": str, "text": str,
-                       "audio_b64": str, "is_follow_up": bool}
+                       "audio_b64": str, "is_follow_up": bool,
+                       "intro_text": str|None, "intro_audio_b64": str|None}
+       intro_* приходят только перед ПЕРВЫМ вопросом каждой темы в сессии
+       (например, "Давайте поговорим о FastAPI"). Клиент должен сначала
+       проиграть intro_audio_b64, выдержать паузу ~2 сек и затем audio_b64.
   {"type": "transcript", "item_id": int, "text": str}
   {"type": "evaluation", "item_id": int, "verdict": str, "rationale": str,
                          "expected_answer": str, "explanation": str}
+  {"type": "awaiting_next", "item_id": int}
+       — оценка готова, сервер ждёт ручного `next` от клиента,
+         автоперехода нет (ни на следующий вопрос, ни на follow-up).
   {"type": "time_warning", "remaining_sec": int}  — за <=120 сек до истечения, шлётся один раз.
   {"type": "done", "reason": "completed"|"time_up"} — все voice-вопросы пройдены или
                          истекло время сессии.
@@ -84,15 +94,20 @@ async def _send_question(
     item: SessionQuestion,
     *,
     follow_up_text: str | None = None,
+    intro_text: str | None = None,
     session_id: int | None = None,
     db: Session | None = None,
     skip_audio: bool = False,
 ) -> None:
     text = follow_up_text or item.prompt_text
     audio_b64 = ""
+    intro_audio_b64: str | None = None
     if not skip_audio:
         audio = synthesize_speech(text, session_id=session_id, db=db)
         audio_b64 = base64.b64encode(audio).decode("ascii")
+        if intro_text:
+            intro_audio = synthesize_speech(intro_text, session_id=session_id, db=db)
+            intro_audio_b64 = base64.b64encode(intro_audio).decode("ascii")
     await ws.send_json({
         "type": "question",
         "item_id": item.id,
@@ -101,6 +116,8 @@ async def _send_question(
         "text": text,
         "audio_b64": audio_b64,
         "is_follow_up": follow_up_text is not None,
+        "intro_text": intro_text,
+        "intro_audio_b64": intro_audio_b64,
     })
 
 
@@ -131,7 +148,22 @@ async def interview_ws(websocket: WebSocket, session_id: int) -> None:
             db.commit()
             db.refresh(sess)
 
+        # Состояние follow-up разнесено на две фазы:
+        # * pending_follow_up — текст уже сгенерирован LLM, но клиенту не отправлен;
+        #   уйдёт как question после клика «к следующему».
+        # * active_follow_up  — follow-up уже отправлен клиенту, ждём ответ
+        #   (нужен, чтобы _evaluate_and_advance понял: следующий answer относится
+        #   к follow-up, а не к основному вопросу).
         pending_follow_up: str | None = None
+        active_follow_up: str | None = None
+        # ID последнего вопроса, отправленного клиенту. Для follow-up-веток нельзя
+        # полагаться на _next_unanswered: основной item уже имеет verdict, и поиск
+        # вернул бы СЛЕДУЮЩИЙ вопрос, а не текущий.
+        current_item_id: int | None = None
+        # Темы, по которым уже прозвучало голосовое intro ("Давайте поговорим о ...")
+        # в рамках этого WS-подключения. На reconnect множество сбрасывается —
+        # это допустимо, повтор intro не критичен для UX.
+        intro_played: set[str] = set()
         time_warning_sent = False
 
         text_only = sess.mode == "text"
@@ -141,9 +173,22 @@ async def interview_ws(websocket: WebSocket, session_id: int) -> None:
             *,
             follow_up_text: str | None = None,
         ) -> None:
+            nonlocal current_item_id
+            current_item_id = item.id
+            # Intro проигрывается ровно один раз для каждой темы — перед первым
+            # её вопросом. Follow-up — не отдельный вопрос темы, intro не шлём.
+            intro_text: str | None = None
+            if (
+                follow_up_text is None
+                and item.topic
+                and item.topic not in intro_played
+            ):
+                intro_text = f"Давайте поговорим о {item.topic}"
+                intro_played.add(item.topic)
             await _send_question(
                 websocket, item,
                 follow_up_text=follow_up_text,
+                intro_text=intro_text,
                 session_id=sess.id,
                 db=db,
                 skip_audio=text_only,
@@ -151,6 +196,18 @@ async def interview_ws(websocket: WebSocket, session_id: int) -> None:
 
         async def _send_done(reason: str) -> None:
             await websocket.send_json({"type": "done", "reason": reason})
+
+        async def _send_awaiting_next(item_id: int) -> None:
+            await websocket.send_json({"type": "awaiting_next", "item_id": item_id})
+
+        async def _advance_to_next() -> None:
+            """Отправить следующий unanswered-вопрос или done, если их нет.
+            Используется и при `next`, и при `skip`."""
+            nxt = _next_unanswered(sess)
+            if nxt is None:
+                await _send_done("completed")
+            else:
+                await _send_q(nxt)
 
         async def _maybe_warn_time() -> None:
             nonlocal time_warning_sent
@@ -164,13 +221,17 @@ async def interview_ws(websocket: WebSocket, session_id: int) -> None:
             *,
             answer_text_in: str,
             voice_signals: str | None,
+            current_pending: str | None,
         ) -> str | None:
             """Общий пайплайн обработки ответа (голосового или текстового).
 
-            Делает evaluate → save → отправить evaluation → решить про follow-up или
-            следующий вопрос. Возвращает новое значение `pending_follow_up`.
+            Делает evaluate → save → отправить evaluation → отправить awaiting_next.
+            Не отправляет следующий вопрос/done автоматом — это делает обработчик
+            `next` после явного клика на фронте.
+
+            Возвращает текст pending follow-up (если evaluation предложила
+            уточнение к основному вопросу), либо None.
             """
-            current_pending = pending_follow_up
             question_for_eval = current_pending or item.prompt_text
             criteria = item.criteria if not current_pending else (
                 item.criteria + "\n(уточняющий follow-up: оцени ответ относительно дополнения к исходному вопросу)"
@@ -223,13 +284,8 @@ async def interview_ws(websocket: WebSocket, session_id: int) -> None:
             )
             if allow_followup:
                 new_pending = evaluation.follow_up_question
-                await _send_q(item, follow_up_text=evaluation.follow_up_question)
-            else:
-                nxt = _next_unanswered(sess)
-                if nxt is None:
-                    await _send_done("completed")
-                else:
-                    await _send_q(nxt)
+
+            await _send_awaiting_next(item.id)
             return new_pending
 
         while True:
@@ -264,6 +320,15 @@ async def interview_ws(websocket: WebSocket, session_id: int) -> None:
                 await _send_q(item)
 
             elif mtype == "skip":
+                # Если активен follow-up — skip означает «не отвечу на follow-up,
+                # хочу к следующему вопросу». Основной item уже имеет verdict —
+                # его не трогаем, иначе затрём результат оценки.
+                if active_follow_up is not None:
+                    active_follow_up = None
+                    pending_follow_up = None
+                    await _advance_to_next()
+                    continue
+                # Стандартный путь: пропустить текущий неотвеченный вопрос.
                 item = _next_unanswered(sess)
                 if item is None:
                     await _send_done("completed")
@@ -273,37 +338,45 @@ async def interview_ws(websocket: WebSocket, session_id: int) -> None:
                 db.commit()
                 db.refresh(sess)
                 pending_follow_up = None
-                nxt = _next_unanswered(sess)
-                if nxt is None:
-                    await _send_done("completed")
-                else:
-                    await _send_q(nxt)
+                await _advance_to_next()
 
             elif mtype == "next":
+                # Сначала отдадим pending follow-up (LLM сгенерила, ждали клика).
+                if pending_follow_up is not None and current_item_id is not None:
+                    item = db.get(SessionQuestion, current_item_id)
+                    if item is not None:
+                        active_follow_up = pending_follow_up
+                        pending_follow_up = None
+                        await _send_q(item, follow_up_text=active_follow_up)
+                        continue
+                # Иначе — к следующему вопросу или done.
                 pending_follow_up = None
-                nxt = _next_unanswered(sess)
-                if nxt is None:
-                    await _send_done("completed")
-                else:
-                    await _send_q(nxt)
+                active_follow_up = None
+                await _advance_to_next()
 
             elif mtype == "replay":
-                # F2: повтор текущего вопроса (или follow-up, если он активен).
-                item = _next_unanswered(sess)
+                # F2: повтор текущего вопроса (либо follow-up, если он активен).
+                # active_follow_up имеет приоритет: если он установлен, основной
+                # item уже оценён, и _next_unanswered вернул бы СЛЕДУЮЩИЙ вопрос.
+                item: SessionQuestion | None = None
+                if active_follow_up is not None and current_item_id is not None:
+                    item = db.get(SessionQuestion, current_item_id)
+                if item is None:
+                    item = _next_unanswered(sess)
                 if item is None:
                     await _send_done("completed")
                     continue
-                replay_text = pending_follow_up or item.prompt_text
-                await _send_q(item, follow_up_text=pending_follow_up)
+                await _send_q(item, follow_up_text=active_follow_up)
                 logger.info(
                     "replay: session_id=%d, item_id=%d, follow_up=%s",
-                    sess.id, item.id, pending_follow_up is not None,
+                    sess.id, item.id, active_follow_up is not None,
                 )
-                # replay_text используется только для логов в _send_question, поэтому здесь noop.
-                _ = replay_text
 
             elif mtype == "answer":
-                item = _next_unanswered(sess)
+                if active_follow_up is not None and current_item_id is not None:
+                    item = db.get(SessionQuestion, current_item_id)
+                else:
+                    item = _next_unanswered(sess)
                 if item is None:
                     await _send_done("completed")
                     continue
@@ -356,8 +429,11 @@ async def interview_ws(websocket: WebSocket, session_id: int) -> None:
                 await websocket.send_json({"type": "transcript", "item_id": item.id, "text": transcript})
 
                 try:
-                    pending_follow_up = await _evaluate_and_advance(
-                        item, answer_text_in=transcript, voice_signals=voice_signals,
+                    new_pending = await _evaluate_and_advance(
+                        item,
+                        answer_text_in=transcript,
+                        voice_signals=voice_signals,
+                        current_pending=active_follow_up,
                     )
                 except Exception:
                     logger.exception("Eval failed")
@@ -368,9 +444,14 @@ async def interview_ws(websocket: WebSocket, session_id: int) -> None:
                         "recoverable": True,
                     })
                     continue
+                pending_follow_up = new_pending
+                active_follow_up = None
 
             elif mtype == "answer_text":
-                item = _next_unanswered(sess)
+                if active_follow_up is not None and current_item_id is not None:
+                    item = db.get(SessionQuestion, current_item_id)
+                else:
+                    item = _next_unanswered(sess)
                 if item is None:
                     await _send_done("completed")
                     continue
@@ -390,8 +471,11 @@ async def interview_ws(websocket: WebSocket, session_id: int) -> None:
                 })
 
                 try:
-                    pending_follow_up = await _evaluate_and_advance(
-                        item, answer_text_in=text_answer, voice_signals=None,
+                    new_pending = await _evaluate_and_advance(
+                        item,
+                        answer_text_in=text_answer,
+                        voice_signals=None,
+                        current_pending=active_follow_up,
                     )
                 except Exception:
                     logger.exception("Eval failed (text)")
@@ -402,6 +486,8 @@ async def interview_ws(websocket: WebSocket, session_id: int) -> None:
                         "recoverable": True,
                     })
                     continue
+                pending_follow_up = new_pending
+                active_follow_up = None
 
             elif mtype == "finish":
                 await _send_done("completed")

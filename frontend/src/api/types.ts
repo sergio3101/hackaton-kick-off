@@ -2,6 +2,18 @@ export type Level = "junior" | "middle" | "senior";
 export type SessionStatus = "draft" | "active" | "finished";
 export type QuestionType = "voice" | "coding";
 export type Verdict = "correct" | "partial" | "incorrect" | "skipped";
+
+export const VERDICT_LABEL_RU: Record<Verdict, string> = {
+  correct: "Верно",
+  partial: "Частично",
+  incorrect: "Неверно",
+  skipped: "Пропущено",
+};
+
+export function verdictLabel(v: string | null | undefined): string {
+  if (!v) return "";
+  return VERDICT_LABEL_RU[v as Verdict] ?? v;
+}
 export type UserRole = "admin" | "user";
 export type AssignmentStatus = "assigned" | "started" | "completed" | "published";
 
@@ -78,6 +90,7 @@ export interface SessionItem {
   expected_answer: string;
   explanation: string;
   paste_chars?: number;
+  coding_language?: string | null;
 }
 
 export type SessionMode = "voice" | "text";

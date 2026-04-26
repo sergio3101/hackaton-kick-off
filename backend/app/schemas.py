@@ -127,6 +127,7 @@ class SessionItemOut(BaseModel):
     expected_answer: str = ""
     explanation: str = ""
     paste_chars: int = 0
+    coding_language: str | None = None
 
 
 class SessionOut(BaseModel):

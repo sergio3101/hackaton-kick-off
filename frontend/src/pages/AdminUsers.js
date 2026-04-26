@@ -45,7 +45,7 @@ export default function AdminUsers() {
                                     marginBottom: 12,
                                 }, children: [_jsx(FormField, { label: "Email", children: _jsx("input", { className: "input", type: "email", name: "new-user-email", autoComplete: "off", placeholder: "user@example.com", value: form.email, onChange: (e) => setForm({ ...form, email: e.target.value }) }) }), _jsx(FormField, { label: "\u0424\u0418\u041E", children: _jsx("input", { className: "input", type: "text", name: "new-user-full-name", autoComplete: "off", placeholder: "\u0418\u0432\u0430\u043D \u0418\u0432\u0430\u043D\u043E\u0432", value: form.full_name, onChange: (e) => setForm({ ...form, full_name: e.target.value }) }) }), _jsx(FormField, { label: "\u041F\u0430\u0440\u043E\u043B\u044C", children: _jsx("input", { className: "input", type: "password", name: "new-user-password", autoComplete: "new-password", placeholder: "\u043C\u0438\u043D. 6 \u0441\u0438\u043C\u0432\u043E\u043B\u043E\u0432", value: form.password, onChange: (e) => setForm({ ...form, password: e.target.value }) }) }), _jsx(FormField, { label: "\u0420\u043E\u043B\u044C", children: _jsxs("select", { className: "select", value: form.role, onChange: (e) => setForm({ ...form, role: e.target.value }), children: [_jsx("option", { value: "user", children: "user" }), _jsx("option", { value: "admin", children: "admin" })] }) })] }), error && (_jsx("div", { style: {
                                     fontSize: 12,
-                                    color: "oklch(0.78 0.16 25)",
+                                    color: "var(--danger-fg)",
                                     marginBottom: 8,
                                 }, children: error })), _jsxs("button", { type: "submit", disabled: createM.isPending || !form.email || form.password.length < 6, className: "btn btn--primary btn--sm", children: [_jsx(Icon, { name: "plus", size: 11 }), createM.isPending ? "Создаю..." : "Создать"] })] })] }), _jsxs("div", { className: "card", style: { padding: 0, overflow: "hidden" }, children: [_jsx("div", { style: {
                             padding: "10px 20px",
@@ -67,7 +67,7 @@ export default function AdminUsers() {
                                         deleteM.mutate(u.id);
                                 }, style: {
                                     fontSize: 11,
-                                    color: "oklch(0.78 0.16 25)",
+                                    color: "var(--danger-fg)",
                                     background: "transparent",
                                     border: "none",
                                     cursor: "pointer",

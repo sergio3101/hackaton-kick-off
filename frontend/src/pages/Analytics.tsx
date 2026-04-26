@@ -43,14 +43,8 @@ export default function Analytics() {
 
       {empty && (
         <div
-          className="card"
-          style={{
-            marginBottom: 18,
-            padding: "14px 18px",
-            background: "var(--warn-soft)",
-            borderColor: "oklch(0.40 0.08 75)",
-            color: "var(--warn)",
-          }}
+          className="state-block state-block--warn"
+          style={{ marginBottom: 18, padding: "14px 18px" }}
         >
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
             <Icon name="sparkle" size={14} />

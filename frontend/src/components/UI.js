@@ -27,15 +27,16 @@ export function StatusPill({ status }) {
         return (_jsx("span", { className: "pill", style: { color: "var(--ink-3)" }, children: "\u0447\u0435\u0440\u043D\u043E\u0432\u0438\u043A" }));
     return _jsx("span", { className: "pill", children: status });
 }
-export function Wave({ bars = 28, intense = 1, }) {
+export function Wave({ bars = 28, intense = 1, active = true, }) {
     const arr = Array.from({ length: bars });
     return (_jsx("div", { className: "wave", children: arr.map((_, i) => {
             const h = 40 + Math.abs(Math.sin(i * 0.7)) * 60 * intense;
             return (_jsx("span", { className: "wave__bar", style: {
                     height: `${h}%`,
                     animationDelay: `${(i % 7) * 0.08}s`,
-                    background: i % 5 === 0 ? "oklch(0.96 0.18 130)" : "var(--accent)",
-                    opacity: 0.5 + (i % 5) * 0.1,
+                    animationPlayState: active ? "running" : "paused",
+                    background: i % 5 === 0 ? "var(--orb-1)" : "var(--accent)",
+                    opacity: active ? 0.5 + (i % 5) * 0.1 : 0.25,
                 } }, i));
         }) }));
 }
@@ -59,6 +60,6 @@ export function Insight({ tag, children, variant = "accent", }) {
     const c = colorMap[variant];
     return (_jsxs("div", { className: "insight", style: { borderLeftColor: c.border }, children: [_jsx("div", { className: "insight__icon", style: { background: c.bg, color: c.color }, children: tag?.charAt(0) || "i" }), _jsxs("div", { style: { flex: 1 }, children: [tag && (_jsx("div", { className: "mono upper", style: { color: "var(--ink-3)", marginBottom: 4 }, children: tag })), _jsx("div", { children: children })] })] }));
 }
-export function Orb({ state = "idle", }) {
-    return (_jsxs("div", { className: `orb orb--${state}`, children: [_jsx("div", { className: "orb__ring" }), _jsx("div", { className: "orb__ring orb__ring--2" }), _jsx("div", { className: "orb__ring orb__ring--3" }), _jsx("div", { className: "orb__core" })] }));
+export function Orb({ state = "idle", active = false, }) {
+    return (_jsxs("div", { className: `orb orb--${state}${active ? " orb--active" : ""}`, children: [_jsx("div", { className: "orb__ring" }), _jsx("div", { className: "orb__ring orb__ring--2" }), _jsx("div", { className: "orb__ring orb__ring--3" }), _jsx("div", { className: "orb__core" })] }));
 }

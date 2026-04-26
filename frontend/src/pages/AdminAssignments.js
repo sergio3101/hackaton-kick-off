@@ -89,7 +89,7 @@ export default function AdminAssignments() {
                                             }, children: [on && _jsx(Icon, { name: "check", size: 11 }), t] }, t));
                                     }), availableTopics.length === 0 && (_jsx("span", { style: { fontSize: 12, color: "var(--ink-3)" }, children: "\u0422\u0435\u043C\u044B \u0437\u0430\u0433\u0440\u0443\u0436\u0430\u044E\u0442\u0441\u044F..." }))] })] })), _jsx("textarea", { className: "input textarea", style: { resize: "vertical", marginBottom: 12 }, rows: 2, placeholder: "\u041A\u043E\u043C\u043C\u0435\u043D\u0442\u0430\u0440\u0438\u0439 \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044E (\u043E\u043F\u0446\u0438\u043E\u043D\u0430\u043B\u044C\u043D\u043E)", value: form.note, onChange: (e) => setForm({ ...form, note: e.target.value }) }), error && (_jsx("div", { style: {
                             fontSize: 12,
-                            color: "oklch(0.78 0.16 25)",
+                            color: "var(--danger-fg)",
                             marginBottom: 8,
                         }, children: error })), _jsxs("button", { type: "button", onClick: () => createM.mutate(form), disabled: !canSubmit || createM.isPending, className: "btn btn--primary", children: [_jsx(Icon, { name: "plus", size: 13 }), createM.isPending ? "Создаю..." : "Назначить"] })] }), _jsxs("div", { className: "card", style: { padding: 0, overflow: "hidden" }, children: [_jsx("div", { style: {
                             padding: "10px 20px",
@@ -118,8 +118,8 @@ export default function AdminAssignments() {
                                         if (confirm("Удалить назначение?"))
                                             deleteM.mutate(a.id);
                                     }, className: "btn btn--sm", style: {
-                                        color: "oklch(0.78 0.16 25)",
-                                        borderColor: "oklch(0.40 0.10 25)",
+                                        color: "var(--danger-fg)",
+                                        borderColor: "var(--danger-border)",
                                     }, children: _jsx(Icon, { name: "trash", size: 11 }) })) : null })] }, a.id)))] })] }));
 }
 function FormField({ label, children, }) {

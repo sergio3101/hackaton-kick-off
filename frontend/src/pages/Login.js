@@ -92,15 +92,7 @@ export default function Login() {
                                 letterSpacing: "0.08em",
                                 color: "var(--ink-3)",
                                 marginBottom: 6,
-                            }, children: "\u041F\u0430\u0440\u043E\u043B\u044C" }), _jsx("input", { type: "password", required: true, minLength: 6, value: password, onChange: (e) => setPassword(e.target.value), placeholder: "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022", className: "input", style: { marginBottom: 20 } }), error && (_jsx("div", { style: {
-                                color: "oklch(0.78 0.16 25)",
-                                fontSize: 12,
-                                marginBottom: 14,
-                                padding: "8px 12px",
-                                background: "var(--danger-soft)",
-                                borderRadius: "var(--r-2)",
-                                border: "1px solid oklch(0.40 0.10 25)",
-                            }, children: error })), _jsx("button", { type: "submit", disabled: busy, className: "btn btn--primary btn--lg", style: { width: "100%", justifyContent: "center" }, children: busy ? "..." : (_jsxs(_Fragment, { children: ["\u0412\u043E\u0439\u0442\u0438 \u0432 \u043F\u043B\u0430\u0442\u0444\u043E\u0440\u043C\u0443 ", _jsx(Icon, { name: "arrow-right", size: 14 })] })) }), _jsxs("div", { style: {
+                            }, children: "\u041F\u0430\u0440\u043E\u043B\u044C" }), _jsx("input", { type: "password", required: true, minLength: 6, value: password, onChange: (e) => setPassword(e.target.value), placeholder: "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022", className: "input", style: { marginBottom: 20 } }), error && (_jsx("div", { className: "state-block state-block--danger", style: { fontSize: 12, marginBottom: 14 }, children: error })), _jsx("button", { type: "submit", disabled: busy, className: "btn btn--primary btn--lg", style: { width: "100%", justifyContent: "center" }, children: busy ? "..." : (_jsxs(_Fragment, { children: ["\u0412\u043E\u0439\u0442\u0438 \u0432 \u043F\u043B\u0430\u0442\u0444\u043E\u0440\u043C\u0443 ", _jsx(Icon, { name: "arrow-right", size: 14 })] })) }), _jsxs("div", { style: {
                                 marginTop: 18,
                                 fontSize: 12,
                                 color: "var(--ink-3)",

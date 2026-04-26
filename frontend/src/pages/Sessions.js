@@ -26,7 +26,8 @@ export default function Sessions() {
         };
     }, [sessions]);
     const filtered = useMemo(() => {
-        return sessions.filter((s) => {
+        return sessions
+            .filter((s) => {
             if (filter !== "all" && s.status !== filter)
                 return false;
             if (q && !semantic) {
@@ -41,7 +42,9 @@ export default function Sessions() {
                 return hay.includes(q.toLowerCase());
             }
             return true;
-        });
+        })
+            .slice()
+            .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     }, [sessions, filter, q, semantic]);
     return (_jsxs("div", { className: "page", children: [_jsxs("div", { className: "page-head", children: [_jsxs("div", { children: [_jsxs("div", { className: "mono upper", style: { color: "var(--ink-3)", marginBottom: 8 }, children: ["HISTORY \u00B7 ", sessions.length, " \u0421\u0415\u0421\u0421\u0418\u0419"] }), _jsx("h1", { className: "page-title", children: isAdmin ? "История сессий" : "Мои отчёты" }), _jsx("div", { className: "page-sub", children: isAdmin
                                     ? "Полнотекстовый и семантический поиск по транскриптам, фильтры и быстрые экспорты."

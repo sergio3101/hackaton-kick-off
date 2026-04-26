@@ -35,7 +35,12 @@ export default function Dashboard() {
   if (!isAdmin) return <Navigate to="/me/assignments" replace />;
 
   const projects = projectsQ.data ?? [];
-  const sessions = sessionsQ.data ?? [];
+  const sessions = (sessionsQ.data ?? [])
+    .slice()
+    .sort(
+      (a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    );
   const isEmpty = !projectsQ.isLoading && projects.length === 0;
   const activeSession = sessions.find((s) => s.status === "active");
   const lastFinished = sessions.find((s) => s.status === "finished");

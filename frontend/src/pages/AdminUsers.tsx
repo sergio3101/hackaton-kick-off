@@ -129,7 +129,7 @@ export default function AdminUsers() {
             <div
               style={{
                 fontSize: 12,
-                color: "oklch(0.78 0.16 25)",
+                color: "var(--danger-fg)",
                 marginBottom: 8,
               }}
             >
@@ -220,7 +220,7 @@ export default function AdminUsers() {
               }}
               style={{
                 fontSize: 11,
-                color: "oklch(0.78 0.16 25)",
+                color: "var(--danger-fg)",
                 background: "transparent",
                 border: "none",
                 cursor: "pointer",

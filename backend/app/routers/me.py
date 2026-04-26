@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
 from app.db import get_db
+from app.lang_detect import detect_coding_language
 from app.llm.generate import generate_coding_tasks
 from app.models import (
     Assignment,
@@ -124,7 +125,9 @@ def start_assignment(
             prompt_text=q.prompt,
             criteria=q.criteria,
         ))
+    session_default_lang = task_set.language or "python"
     for j, task in enumerate(task_set.tasks):
+        item_lang = detect_coding_language(task.topic, session_default_lang)
         db.add(SessionQuestion(
             session_id=sess.id,
             idx=len(chosen) + j,
@@ -133,6 +136,7 @@ def start_assignment(
             topic=task.topic or "coding",
             prompt_text=task.prompt,
             criteria="",
+            coding_language=item_lang,
         ))
 
     a.status = AssignmentStatus.started

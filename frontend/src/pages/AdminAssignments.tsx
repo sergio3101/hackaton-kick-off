@@ -253,7 +253,7 @@ export default function AdminAssignments() {
           <div
             style={{
               fontSize: 12,
-              color: "oklch(0.78 0.16 25)",
+              color: "var(--danger-fg)",
               marginBottom: 8,
             }}
           >
@@ -364,8 +364,8 @@ export default function AdminAssignments() {
                   }}
                   className="btn btn--sm"
                   style={{
-                    color: "oklch(0.78 0.16 25)",
-                    borderColor: "oklch(0.40 0.10 25)",
+                    color: "var(--danger-fg)",
+                    borderColor: "var(--danger-border)",
                   }}
                 >
                   <Icon name="trash" size={11} />

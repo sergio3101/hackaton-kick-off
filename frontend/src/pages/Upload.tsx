@@ -204,16 +204,7 @@ export default function Upload() {
         </div>
 
         {error && (
-          <div
-            style={{
-              padding: "10px 14px",
-              background: "var(--danger-soft)",
-              border: "1px solid oklch(0.40 0.10 25)",
-              borderRadius: "var(--r-2)",
-              color: "oklch(0.78 0.16 25)",
-              fontSize: 13,
-            }}
-          >
+          <div className="state-block state-block--danger" style={{ fontSize: 13 }}>
             {error}
           </div>
         )}

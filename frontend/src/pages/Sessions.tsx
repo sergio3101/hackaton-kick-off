@@ -33,21 +33,27 @@ export default function Sessions() {
   }, [sessions]);
 
   const filtered = useMemo(() => {
-    return sessions.filter((s) => {
-      if (filter !== "all" && s.status !== filter) return false;
-      if (q && !semantic) {
-        const hay = [
-          "#" + s.id,
-          s.selected_topics.join(" "),
-          s.selected_level,
-          s.mode,
-        ]
-          .join(" ")
-          .toLowerCase();
-        return hay.includes(q.toLowerCase());
-      }
-      return true;
-    });
+    return sessions
+      .filter((s) => {
+        if (filter !== "all" && s.status !== filter) return false;
+        if (q && !semantic) {
+          const hay = [
+            "#" + s.id,
+            s.selected_topics.join(" "),
+            s.selected_level,
+            s.mode,
+          ]
+            .join(" ")
+            .toLowerCase();
+          return hay.includes(q.toLowerCase());
+        }
+        return true;
+      })
+      .slice()
+      .sort(
+        (a, b) =>
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+      );
   }, [sessions, filter, q, semantic]);
 
   return (

@@ -101,15 +101,7 @@ export default function RequirementsDetail() {
                                     if (confirm("Удалить проект безвозвратно? Все связанные сессии и отчёты тоже будут удалены.")) {
                                         deleteMut.mutate();
                                     }
-                                }, disabled: deleteMut.isPending, className: "btn btn--danger", children: [_jsx(Icon, { name: "trash", size: 13 }), " \u0423\u0434\u0430\u043B\u0438\u0442\u044C"] }), _jsxs(Link, { to: "/admin/assignments", className: "btn btn--primary", children: [_jsx(Icon, { name: "tag", size: 13 }), " \u041D\u0430\u0437\u043D\u0430\u0447\u0438\u0442\u044C \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044E"] })] })] }), regenerateMut.isError && (_jsx("div", { style: {
-                    marginBottom: 16,
-                    padding: "10px 14px",
-                    background: "var(--danger-soft)",
-                    border: "1px solid oklch(0.40 0.10 25)",
-                    borderRadius: "var(--r-2)",
-                    color: "oklch(0.78 0.16 25)",
-                    fontSize: 13,
-                }, children: "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u0435\u0440\u0435\u0433\u0435\u043D\u0435\u0440\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0431\u0430\u043D\u043A. \u041F\u043E\u043F\u0440\u043E\u0431\u0443\u0439\u0442\u0435 \u0435\u0449\u0451 \u0440\u0430\u0437." })), _jsxs("div", { style: { display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 18 }, children: [_jsxs("div", { style: { display: "flex", flexDirection: "column", gap: 18 }, children: [_jsxs("div", { className: "card", children: [_jsxs("div", { style: {
+                                }, disabled: deleteMut.isPending, className: "btn btn--danger", children: [_jsx(Icon, { name: "trash", size: 13 }), " \u0423\u0434\u0430\u043B\u0438\u0442\u044C"] }), _jsxs(Link, { to: "/admin/assignments", className: "btn btn--primary", children: [_jsx(Icon, { name: "tag", size: 13 }), " \u041D\u0430\u0437\u043D\u0430\u0447\u0438\u0442\u044C \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044E"] })] })] }), regenerateMut.isError && (_jsx("div", { className: "state-block state-block--danger", style: { marginBottom: 16, fontSize: 13 }, children: "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u0435\u0440\u0435\u0433\u0435\u043D\u0435\u0440\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0431\u0430\u043D\u043A. \u041F\u043E\u043F\u0440\u043E\u0431\u0443\u0439\u0442\u0435 \u0435\u0449\u0451 \u0440\u0430\u0437." })), _jsxs("div", { style: { display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 18 }, children: [_jsxs("div", { style: { display: "flex", flexDirection: "column", gap: 18 }, children: [_jsxs("div", { className: "card", children: [_jsxs("div", { style: {
                                             display: "flex",
                                             justifyContent: "space-between",
                                             alignItems: "center",

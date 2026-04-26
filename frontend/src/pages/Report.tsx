@@ -6,15 +6,8 @@ import { api } from "../api/client";
 import { useAuth } from "../auth/AuthProvider";
 import Icon from "../components/Icon";
 import { Kpi } from "../components/UI";
-import { PasteBadge } from "../features/coding/CodingPanel";
-import type { ReportOut, Verdict } from "../api/types";
-
-const VERDICT_LABEL: Record<Verdict, string> = {
-  correct: "верно",
-  partial: "частично",
-  incorrect: "неверно",
-  skipped: "пропущено",
-};
+import { PasteBadge } from "../features/coding/PasteBadge";
+import { VERDICT_LABEL_RU, type ReportOut, type Verdict } from "../api/types";
 
 const VERDICT_PILL: Record<Verdict, string> = {
   correct: "pill--accent",
@@ -179,30 +172,14 @@ export default function Report() {
 
       {pdfError && (
         <div
-          style={{
-            marginBottom: 16,
-            padding: "10px 14px",
-            background: "var(--danger-soft)",
-            border: "1px solid oklch(0.40 0.10 25)",
-            borderRadius: "var(--r-2)",
-            color: "oklch(0.78 0.16 25)",
-            fontSize: 13,
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 12,
-          }}
+          className="state-block state-block--danger"
+          style={{ marginBottom: 16, fontSize: 13 }}
         >
           <span>{pdfError}</span>
           <button
             type="button"
             onClick={() => setPdfError(null)}
-            style={{
-              fontSize: 11,
-              textDecoration: "underline",
-              background: "none",
-              border: "none",
-              color: "inherit",
-            }}
+            className="state-block__close"
           >
             Закрыть
           </button>
@@ -214,7 +191,7 @@ export default function Report() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(4, 1fr)",
+            gridTemplateColumns: `repeat(${isAdmin ? 4 : 3}, 1fr)`,
             gap: 14,
             marginBottom: 18,
           }}
@@ -234,14 +211,18 @@ export default function Report() {
             value={summary.correct}
             hint={`${summary.partial} частично`}
           />
-          <Kpi
-            label="Стоимость"
-            value={
-              data.total_cost_usd ? `$${data.total_cost_usd.toFixed(4)}` : "—"
-            }
-            hint="LLM/TTS/STT"
-            sparkColor="var(--warn)"
-          />
+          {isAdmin && (
+            <Kpi
+              label="Стоимость"
+              value={
+                data.total_cost_usd
+                  ? `$${data.total_cost_usd.toFixed(4)}`
+                  : "—"
+              }
+              hint="LLM/TTS/STT"
+              sparkColor="var(--warn)"
+            />
+          )}
         </div>
       )}
 
@@ -371,7 +352,7 @@ export default function Report() {
                   </div>
                   {item.verdict && (
                     <span className={`pill ${VERDICT_PILL[item.verdict]}`}>
-                      {VERDICT_LABEL[item.verdict]}
+                      {VERDICT_LABEL_RU[item.verdict]}
                     </span>
                   )}
                 </div>
@@ -444,7 +425,7 @@ export default function Report() {
                   >
                     {item.verdict && (
                       <span className={`pill ${VERDICT_PILL[item.verdict]}`}>
-                        {VERDICT_LABEL[item.verdict]}
+                        {VERDICT_LABEL_RU[item.verdict]}
                       </span>
                     )}
                     {isAdmin && (item.paste_chars ?? 0) > 0 && (
@@ -458,7 +439,7 @@ export default function Report() {
                 {item.answer_text && (
                   <pre
                     style={{
-                      background: "oklch(0.13 0.005 60)",
+                      background: "var(--editor-bg)",
                       color: "var(--ink-1)",
                       fontSize: 12,
                       padding: 12,
@@ -491,12 +472,12 @@ export default function Report() {
                     </div>
                     <pre
                       style={{
-                        background: "oklch(0.13 0.005 60)",
+                        background: "var(--editor-bg)",
                         color: "var(--accent)",
                         fontSize: 12,
                         padding: 12,
                         borderRadius: "var(--r-2)",
-                        border: "1px solid oklch(0.40 0.10 130)",
+                        border: "1px solid var(--accent-border)",
                         overflow: "auto",
                         margin: 0,
                         fontFamily: "var(--font-mono)",
@@ -573,12 +554,12 @@ function ReportBlock({
     },
     warn: {
       background: "var(--warn-soft)",
-      borderColor: "oklch(0.40 0.08 75)",
+      borderColor: "var(--warn-border)",
       color: "var(--warn)",
     },
     accent: {
       background: "var(--accent-soft)",
-      borderColor: "oklch(0.40 0.10 130)",
+      borderColor: "var(--accent-border)",
       color: "var(--accent)",
     },
   };

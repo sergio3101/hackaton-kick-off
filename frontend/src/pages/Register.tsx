@@ -192,15 +192,8 @@ export default function Register() {
 
           {error && (
             <div
-              style={{
-                color: "oklch(0.78 0.16 25)",
-                fontSize: 12,
-                marginBottom: 14,
-                padding: "8px 12px",
-                background: "var(--danger-soft)",
-                borderRadius: "var(--r-2)",
-                border: "1px solid oklch(0.40 0.10 25)",
-              }}
+              className="state-block state-block--danger"
+              style={{ fontSize: 12, marginBottom: 14 }}
             >
               {error}
             </div>

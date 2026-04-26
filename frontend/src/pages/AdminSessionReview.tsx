@@ -2,9 +2,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 
 import { api } from "../api/client";
-import type { ReportOut } from "../api/types";
+import { verdictLabel, type ReportOut } from "../api/types";
 import Icon from "../components/Icon";
-import { PasteBadge } from "../features/coding/CodingPanel";
+import { PasteBadge } from "../features/coding/PasteBadge";
 
 export default function AdminSessionReview() {
   const { id } = useParams<{ id: string }>();
@@ -17,13 +17,18 @@ export default function AdminSessionReview() {
     enabled: !!sid,
   });
 
+  const invalidateAfterPublishToggle = () => {
+    qc.invalidateQueries({ queryKey: ["admin", "session-report", sid] });
+    qc.invalidateQueries({ queryKey: ["admin", "assignments"] });
+    qc.invalidateQueries({ queryKey: ["sessions"] });
+  };
   const publishM = useMutation({
     mutationFn: async () => (await api.post(`/api/admin/sessions/${sid}/publish`)).data,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "session-report", sid] }),
+    onSuccess: invalidateAfterPublishToggle,
   });
   const unpublishM = useMutation({
     mutationFn: async () => (await api.delete(`/api/admin/sessions/${sid}/publish`)).data,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "session-report", sid] }),
+    onSuccess: invalidateAfterPublishToggle,
   });
 
   if (reportQ.isLoading) {
@@ -100,15 +105,24 @@ export default function AdminSessionReview() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(4, 1fr)",
+              gridTemplateColumns: "repeat(5, 1fr)",
               gap: 10,
               marginBottom: 16,
             }}
           >
-            <Stat label="correct" value={summary.correct} color="var(--accent)" />
-            <Stat label="partial" value={summary.partial} color="var(--warn)" />
-            <Stat label="incorrect" value={summary.incorrect} color="var(--danger)" />
-            <Stat label="skipped" value={summary.skipped} color="var(--ink-3)" />
+            <Stat label="Верно" value={summary.correct} color="var(--accent)" />
+            <Stat label="Частично" value={summary.partial} color="var(--warn)" />
+            <Stat label="Неверно" value={summary.incorrect} color="var(--danger)" />
+            <Stat label="Пропущено" value={summary.skipped} color="var(--ink-3)" />
+            <Stat
+              label="cost · LLM/TTS/STT"
+              value={
+                reportQ.data?.total_cost_usd
+                  ? `$${reportQ.data.total_cost_usd.toFixed(4)}`
+                  : "—"
+              }
+              color="var(--warn)"
+            />
           </div>
           {summary.overall && (
             <div
@@ -145,7 +159,7 @@ export default function AdminSessionReview() {
               >
                 [{it.type}] {it.topic}{" "}
                 {it.verdict && (
-                  <span style={{ color: "var(--ink-3)" }}>· {it.verdict}</span>
+                  <span style={{ color: "var(--ink-3)" }}>· {verdictLabel(it.verdict)}</span>
                 )}
               </div>
               {it.type === "coding" && (it.paste_chars ?? 0) > 0 && (
@@ -209,7 +223,7 @@ export default function AdminSessionReview() {
                     background: "var(--accent-soft)",
                     color: "var(--ink-1)",
                     borderRadius: "var(--r-2)",
-                    border: "1px solid oklch(0.40 0.10 130)",
+                    border: "1px solid var(--accent-border)",
                     whiteSpace: "pre-wrap",
                   }}
                 >
@@ -230,7 +244,7 @@ function Stat({
   color,
 }: {
   label: string;
-  value: number;
+  value: number | string;
   color: string;
 }) {
   return (

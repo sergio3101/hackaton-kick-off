@@ -105,9 +105,11 @@ export function StatusPill({ status }: { status: string }) {
 export function Wave({
   bars = 28,
   intense = 1,
+  active = true,
 }: {
   bars?: number;
   intense?: number;
+  active?: boolean;
 }) {
   const arr = Array.from({ length: bars });
   return (
@@ -121,9 +123,10 @@ export function Wave({
             style={{
               height: `${h}%`,
               animationDelay: `${(i % 7) * 0.08}s`,
+              animationPlayState: active ? "running" : "paused",
               background:
-                i % 5 === 0 ? "oklch(0.96 0.18 130)" : "var(--accent)",
-              opacity: 0.5 + (i % 5) * 0.1,
+                i % 5 === 0 ? "var(--orb-1)" : "var(--accent)",
+              opacity: active ? 0.5 + (i % 5) * 0.1 : 0.25,
             }}
           />
         );
@@ -193,11 +196,13 @@ export function Insight({
 
 export function Orb({
   state = "idle",
+  active = false,
 }: {
   state?: "listening" | "thinking" | "speaking" | "idle";
+  active?: boolean;
 }) {
   return (
-    <div className={`orb orb--${state}`}>
+    <div className={`orb orb--${state}${active ? " orb--active" : ""}`}>
       <div className="orb__ring" />
       <div className="orb__ring orb__ring--2" />
       <div className="orb__ring orb__ring--3" />

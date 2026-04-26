@@ -171,6 +171,9 @@ class SessionQuestion(Base):
     expected_answer: Mapped[str] = mapped_column(Text, nullable=False, default="")
     explanation: Mapped[str] = mapped_column(Text, nullable=False, default="")
     paste_chars: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Язык подсветки/проверки конкретно этой задачи (например dockerfile, sql, proto, go).
+    # Для voice-вопросов — пусто. Если null/"" — fallback на InterviewSession.coding_task_language.
+    coding_language: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, server_default=func.now())
 
     session: Mapped[InterviewSession] = relationship(back_populates="items")

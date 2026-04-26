@@ -4,6 +4,7 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-do
 import { useAuth } from "../auth/AuthProvider";
 import Icon, { ZebraLogo } from "./Icon";
 import type { IconName } from "./Icon";
+import ThemeToggle from "./ThemeToggle";
 
 interface NavItem {
   to: string;
@@ -73,7 +74,7 @@ export default function Layout() {
       <aside className="sidebar">
         <Link to="/" className="sidebar__brand">
           <div className="sidebar__brand-logo">
-            <ZebraLogo size={26} color="#0e0e0e" />
+            <ZebraLogo size={26} color="var(--logo-fg)" />
           </div>
           <div>
             <div className="sidebar__brand-name">Kick-off Prep</div>
@@ -149,7 +150,9 @@ export default function Layout() {
               </span>
             ))}
           </div>
-          <div className="topbar__actions" />
+          <div className="topbar__actions">
+            <ThemeToggle />
+          </div>
         </div>
         <Outlet />
       </div>

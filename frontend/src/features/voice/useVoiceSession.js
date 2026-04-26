@@ -30,10 +30,56 @@ export function useVoiceSession(sessionId) {
         doneReason: null,
         timeWarningRemainingSec: null,
         reconnecting: false,
+        playing: false,
     });
     const reconnectAttemptRef = useRef(0);
     const reconnectTimerRef = useRef(null);
     const isMountedRef = useRef(true);
+    // Помечаем, что WS закрылся «штатно» (done / time_up / unmount) — onclose не
+    // должен инициировать reconnect, иначе клиент запускает петлю hello → done
+    // → close → hello → ... и каждый цикл сбрасывает серверный intro_played.
+    const intentionalCloseRef = useRef(false);
+    // Ключи sessionStorage, привязанные к конкретной сессии. Нужны, чтобы
+    // переход «Мои кикоффы → назад в /interview» (Interview unmount/mount) не
+    // повторял уже сыгранный вопрос и intro.
+    const playedKeyKey = `kickoff.voice-played-key:${sessionId}`;
+    const introTopicsKey = `kickoff.voice-intro-topics:${sessionId}`;
+    // Композитный ключ уже сыгранного вопроса. Инициализируется из storage,
+    // чтобы при возврате на страницу повторно не проигрывать тот же TTS.
+    const lastPlayedKeyRef = useRef(typeof window !== "undefined"
+        ? window.sessionStorage.getItem(playedKeyKey)
+        : null);
+    // Темы, для которых intro уже отзвучало. Переживает unmount/mount страницы.
+    const introPlayedTopicsRef = useRef(new Set(typeof window !== "undefined"
+        ? (() => {
+            try {
+                const raw = window.sessionStorage.getItem(introTopicsKey);
+                return raw ? JSON.parse(raw) : [];
+            }
+            catch {
+                return [];
+            }
+        })()
+        : []));
+    const persistPlayedKey = useCallback((key) => {
+        try {
+            window.sessionStorage.setItem(playedKeyKey, key);
+        }
+        catch { /* private mode / storage full — ignore */ }
+    }, [playedKeyKey]);
+    const persistIntroTopics = useCallback(() => {
+        try {
+            window.sessionStorage.setItem(introTopicsKey, JSON.stringify([...introPlayedTopicsRef.current]));
+        }
+        catch { /* ignore */ }
+    }, [introTopicsKey]);
+    const clearVoiceStorage = useCallback(() => {
+        try {
+            window.sessionStorage.removeItem(playedKeyKey);
+            window.sessionStorage.removeItem(introTopicsKey);
+        }
+        catch { /* ignore */ }
+    }, [playedKeyKey, introTopicsKey]);
     // Безопасная отправка: молчаливо игнорируем сообщения, если WS не открыт
     // (например, между обрывом и reconnect). Возвращает true при успехе.
     const safeSend = useCallback((payload) => {
@@ -58,11 +104,14 @@ export function useVoiceSession(sessionId) {
     const chunksRef = useRef([]);
     const totalRecordedMsRef = useRef(0);
     const segmentStartRef = useRef(0);
-    const audioRef = useRef(null);
+    // WebAudio: переиспользуемый AudioContext + текущий BufferSource.
+    // HTMLAudioElement в этом проекте отрезал первое слово на старте новой
+    // сессии воспроизведения (выход устройства просыпался из low-power state),
+    // поэтому крутим звук через AudioBufferSourceNode с искусственной тишиной
+    // в начале — она поглощает warm-up задержку.
+    const audioCtxRef = useRef(null);
+    const audioSrcRef = useRef(null);
     const pendingItemRef = useRef(null);
-    // Композитный ключ уже сыгранного вопроса, чтобы не повторять TTS на reconnect.
-    // Очищаем перед replay (там повтор — намеренный).
-    const lastPlayedKeyRef = useRef(null);
     const resetSegments = useCallback(() => {
         chunksRef.current = [];
         totalRecordedMsRef.current = 0;
@@ -86,37 +135,68 @@ export function useVoiceSession(sessionId) {
     }, []);
     const playAudio = useCallback(async (audioB64) => {
         try {
-            // Останавливаем предыдущий TTS, иначе при быстрой смене вопросов два
-            // голоса заиграют одновременно и пользователь услышит «кашу».
-            const prev = audioRef.current;
-            if (prev) {
+            // Глушим предыдущий source, иначе при быстрой смене вопросов два голоса
+            // заиграют одновременно и получится «каша».
+            const prevSrc = audioSrcRef.current;
+            if (prevSrc) {
                 try {
-                    prev.pause();
-                    prev.src = "";
+                    prevSrc.onended = null;
+                    prevSrc.stop();
                 }
-                catch {
-                    /* ignore */
-                }
+                catch { /* ignore */ }
+                audioSrcRef.current = null;
+                setState((s) => (s.playing ? { ...s, playing: false } : s));
             }
             const bytes = Uint8Array.from(atob(audioB64), (c) => c.charCodeAt(0));
-            const blob = new Blob([bytes], { type: "audio/mpeg" });
-            const url = URL.createObjectURL(blob);
-            const audio = new Audio(url);
-            audioRef.current = audio;
+            // decodeAudioData требует "detached" ArrayBuffer; берём свой кусок.
+            const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+            // Один AudioContext на хук — пересоздавать его дорого, и каждый новый
+            // ctx первое срабатывание тоже warm-up'ит устройство.
+            let ctx = audioCtxRef.current;
+            if (!ctx) {
+                const Ctor = window.AudioContext ||
+                    window
+                        .webkitAudioContext;
+                ctx = new Ctor();
+                audioCtxRef.current = ctx;
+            }
+            if (ctx.state === "suspended") {
+                try {
+                    await ctx.resume();
+                }
+                catch { /* ignore */ }
+            }
+            const decoded = await ctx.decodeAudioData(ab);
+            // Префиксная тишина (~250 мс) поглощает warm-up аудио-устройства —
+            // именно из-за него на старте «съедалось» первое слово вопроса.
+            const SILENCE_MS = 250;
+            const silenceFrames = Math.floor((SILENCE_MS / 1000) * decoded.sampleRate);
+            const padded = ctx.createBuffer(decoded.numberOfChannels, decoded.length + silenceFrames, decoded.sampleRate);
+            for (let ch = 0; ch < decoded.numberOfChannels; ch++) {
+                padded.copyToChannel(decoded.getChannelData(ch), ch, silenceFrames);
+            }
+            const src = ctx.createBufferSource();
+            src.buffer = padded;
+            src.connect(ctx.destination);
+            audioSrcRef.current = src;
             await new Promise((resolve) => {
-                audio.onended = () => {
-                    URL.revokeObjectURL(url);
+                src.onended = () => {
+                    setState((s) => audioSrcRef.current === src ? { ...s, playing: false } : s);
+                    if (audioSrcRef.current === src)
+                        audioSrcRef.current = null;
                     resolve();
                 };
-                audio.onerror = () => {
-                    URL.revokeObjectURL(url);
-                    resolve();
-                };
-                audio.play().catch(() => resolve());
+                // playing=true сразу: префиксная тишина уже идёт, UI должен показывать
+                // фазу "ГОВОРИТ", чтобы пользователь не думал, что система зависла.
+                setState((s) => audioSrcRef.current === src ? { ...s, playing: true } : s);
+                try {
+                    src.start();
+                }
+                catch { /* already started */ }
             });
         }
         catch {
-            /* ignore */
+            /* ignore — fallback на следующий вопрос даст шанс воспроизвестись */
         }
     }, []);
     const connect = useCallback(() => {
@@ -167,12 +247,37 @@ export function useVoiceSession(sessionId) {
                 }));
                 if (shouldPlay) {
                     lastPlayedKeyRef.current = key;
+                    persistPlayedKey(key);
+                    // Серверный intro_played сбрасывается на каждом WS-подключении, так
+                    // что после reconnect intro может прилететь снова. Дублируем учёт
+                    // тем на клиенте — он живёт всё время хука и storage.
+                    const serverIntroB64 = typeof msg.intro_audio_b64 === "string" && msg.intro_audio_b64.length > 0
+                        ? msg.intro_audio_b64
+                        : undefined;
+                    const topicAlreadyIntroduced = !!q.topic && introPlayedTopicsRef.current.has(q.topic);
+                    const introB64 = serverIntroB64 && !topicAlreadyIntroduced ? serverIntroB64 : undefined;
+                    if (introB64 && q.topic) {
+                        introPlayedTopicsRef.current.add(q.topic);
+                        persistIntroTopics();
+                    }
                     // Защита: TTS нового вопроса не должен играть поверх записи ответа.
                     // Если recorder ещё работает (race с сервером — например, follow-up
                     // пришёл до того как пользователь нажал submit) — сначала глушим запись.
-                    void stopRecorderIfActive().then(() => playAudio(msg.audio_b64).then(() => {
-                        setState((s) => (s.current?.itemId === q.itemId ? { ...s, phase: "listening" } : s));
-                    }));
+                    void stopRecorderIfActive().then(async () => {
+                        // Intro звучит ровно один раз перед первым вопросом каждой темы:
+                        // "Давайте поговорим о ...". Пауза 2 сек — чтобы фраза не сливалась
+                        // с самим вопросом.
+                        if (introB64) {
+                            await playAudio(introB64);
+                            await new Promise((r) => setTimeout(r, 2000));
+                            // За время паузы клиент мог уже уйти на следующий item
+                            // (skip/finish во время intro): тогда не играем основной TTS.
+                            if (pendingItemRef.current?.itemId !== q.itemId)
+                                return;
+                        }
+                        await playAudio(msg.audio_b64);
+                        setState((s) => s.current?.itemId === q.itemId ? { ...s, phase: "listening" } : s);
+                    });
                 }
             }
             else if (msg.type === "transcript") {
@@ -210,9 +315,25 @@ export function useVoiceSession(sessionId) {
                     return { ...s, log };
                 });
             }
+            else if (msg.type === "awaiting_next") {
+                // Сервер закончил оценку, держит паузу до явного `next` от клиента.
+                // Микрофон выключаем — следующий ответ возможен только после клика.
+                setState((s) => ({ ...s, phase: "awaiting_next", recording: false }));
+            }
             else if (msg.type === "done") {
                 const reason = msg.reason === "time_up" ? "time_up" : "completed";
+                // done — терминальное состояние сессии, дальше WS не нужен. Помечаем
+                // флагом синхронно (через ref), чтобы onclose не пытался реконнектить
+                // даже если React ещё не успел применить setState с phase=done.
+                intentionalCloseRef.current = true;
+                // Сессия завершена — storage больше не нужен; иначе следующий
+                // юзер на той же вкладке унаследует «уже сыгранные» темы.
+                clearVoiceStorage();
                 setState((s) => ({ ...s, current: null, phase: "done", doneReason: reason }));
+                try {
+                    wsRef.current?.close(1000, "done");
+                }
+                catch { /* ignore */ }
             }
             else if (msg.type === "time_warning") {
                 const rem = typeof msg.remaining_sec === "number" ? msg.remaining_sec : null;
@@ -232,9 +353,14 @@ export function useVoiceSession(sessionId) {
                 }));
             }
         };
-        ws.onclose = () => {
-            // C5: если сессия не закончена — пробуем переподключиться с backoff.
+        ws.onclose = (event) => {
             if (!isMountedRef.current)
+                return;
+            // Штатные закрытия — done/finish (флаг), normal close (1000), policy (1008,
+            // обычно auth) — никогда не реконнектим, иначе ловим петлю.
+            if (intentionalCloseRef.current)
+                return;
+            if (event.code === 1000 || event.code === 1008)
                 return;
             setState((s) => {
                 if (s.phase === "done")
@@ -375,6 +501,17 @@ export function useVoiceSession(sessionId) {
         totalRecordedMsRef.current = 0;
         setState((s) => ({ ...s, phase: "thinking", error: null, segments: 0 }));
     }, [safeSend, state.recording]);
+    const next = useCallback(() => {
+        // Шлётся в ответ на серверный `awaiting_next`. Сервер сам решит, что
+        // отправить дальше: pending follow-up, следующий вопрос или done.
+        if (state.recording)
+            return;
+        if (!safeSend({ type: "next" }))
+            return;
+        chunksRef.current = [];
+        totalRecordedMsRef.current = 0;
+        setState((s) => ({ ...s, phase: "thinking", error: null, segments: 0 }));
+    }, [safeSend, state.recording]);
     const submitTextAnswer = useCallback(async (text) => {
         const trimmed = text.trim();
         if (trimmed.length < 5) {
@@ -398,6 +535,10 @@ export function useVoiceSession(sessionId) {
         setState((s) => ({ ...s, phase: "thinking", segments: 0, error: null }));
     }, [state.recording, stopRecording, safeSend]);
     const finish = useCallback(() => {
+        // Сервер на finish ответит done и закроет WS. Помечаем заранее, чтобы
+        // onclose не зашёл в реконнект-ветку, если сообщение done не успеет
+        // долететь до закрытия (редкая гонка).
+        intentionalCloseRef.current = true;
         safeSend({ type: "finish" });
     }, [safeSend]);
     const replay = useCallback(() => {
@@ -407,19 +548,24 @@ export function useVoiceSession(sessionId) {
             return;
         chunksRef.current = [];
         totalRecordedMsRef.current = 0;
-        // Сбрасываем «уже сыгранный» ключ — иначе наша анти-дублирующая защита
-        // подавит повторное воспроизведение на replay.
+        // Сбрасываем «уже сыгранный» ключ (и в памяти, и в storage) — иначе
+        // анти-дублирующая защита подавит повторное воспроизведение на replay.
         lastPlayedKeyRef.current = null;
+        try {
+            window.sessionStorage.removeItem(playedKeyKey);
+        }
+        catch { /* ignore */ }
         if (!safeSend({ type: "replay" }))
             return;
         setState((s) => ({ ...s, phase: "speaking", segments: 0, error: null }));
-    }, [safeSend, state.recording]);
+    }, [safeSend, state.recording, playedKeyKey]);
     const dismissError = useCallback(() => {
         setState((s) => ({ ...s, error: null }));
     }, []);
     useEffect(() => {
         return () => {
             isMountedRef.current = false;
+            intentionalCloseRef.current = true;
             try {
                 recorderRef.current?.stream?.getTracks().forEach((t) => t.stop());
             }
@@ -427,7 +573,23 @@ export function useVoiceSession(sessionId) {
                 /* ignore */
             }
             mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
-            audioRef.current?.pause();
+            const src = audioSrcRef.current;
+            if (src) {
+                try {
+                    src.onended = null;
+                    src.stop();
+                }
+                catch { /* ignore */ }
+                audioSrcRef.current = null;
+            }
+            const ctx = audioCtxRef.current;
+            if (ctx) {
+                try {
+                    void ctx.close();
+                }
+                catch { /* ignore */ }
+                audioCtxRef.current = null;
+            }
             if (reconnectTimerRef.current !== null) {
                 window.clearTimeout(reconnectTimerRef.current);
                 reconnectTimerRef.current = null;
@@ -435,6 +597,16 @@ export function useVoiceSession(sessionId) {
             reconnectAttemptRef.current = RECONNECT_DELAYS_MS.length; // не пытаться реконнектиться при cleanup
             wsRef.current?.close();
         };
+    }, []);
+    // Восстановление лога из persistent state бэкенда (sessions.items с answer_text).
+    // Используется при возврате на страницу интервью в той же сессии.
+    // Если хотя бы один verdict уже пришёл по WS — игнорируем гидрат.
+    const hydrate = useCallback((items) => {
+        setState((s) => {
+            if (s.log.length > 0)
+                return s;
+            return { ...s, log: items };
+        });
     }, []);
     return {
         ...state,
@@ -446,8 +618,10 @@ export function useVoiceSession(sessionId) {
         submitTextAnswer,
         discardSegments,
         skip,
+        next,
         finish,
         replay,
         dismissError,
+        hydrate,
     };
 }

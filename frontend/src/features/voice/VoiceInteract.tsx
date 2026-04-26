@@ -1,15 +1,17 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import Icon from "../../components/Icon";
 import { Orb, Wave } from "../../components/UI";
-import { useVoiceSession } from "./useVoiceSession";
+import type { useVoiceSession } from "./useVoiceSession";
+
+export type VoiceSession = ReturnType<typeof useVoiceSession>;
 
 interface Props {
-  sessionId: number;
+  v: VoiceSession;
   totalVoice: number;
-  autoConnect?: boolean;
   continuous?: boolean;
   textMode?: boolean;
+  frozen?: boolean;
 }
 
 const PHASE_LABEL: Record<string, string> = {
@@ -17,6 +19,7 @@ const PHASE_LABEL: Record<string, string> = {
   speaking: "ГОВОРИТ",
   listening: "СЛУШАЕТ",
   thinking: "ДУМАЕТ",
+  awaiting_next: "ОТВЕТ ОЦЕНЁН",
   done: "СЕССИЯ ЗАВЕРШЕНА",
   error: "ОШИБКА СОЕДИНЕНИЯ",
 };
@@ -26,6 +29,7 @@ const PHASE_COLOR: Record<string, string> = {
   speaking: "var(--info)",
   listening: "var(--accent)",
   thinking: "var(--warn)",
+  awaiting_next: "var(--accent)",
   done: "var(--ink-3)",
   error: "var(--danger)",
 };
@@ -39,28 +43,15 @@ function phaseToOrbState(
   return "idle";
 }
 
-export default function VoicePanel({
-  sessionId,
+export default function VoiceInteract({
+  v,
   totalVoice,
-  autoConnect = true,
   continuous = false,
   textMode: forceTextMode = false,
+  frozen = false,
 }: Props) {
-  const v = useVoiceSession(sessionId);
   const [textMode, setTextMode] = useState(forceTextMode);
   const [textDraft, setTextDraft] = useState("");
-  const logRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (autoConnect) v.connect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoConnect]);
-
-  useEffect(() => {
-    if (logRef.current) {
-      logRef.current.scrollTop = logRef.current.scrollHeight;
-    }
-  }, [v.log.length]);
 
   useEffect(() => {
     setTextDraft("");
@@ -79,21 +70,38 @@ export default function VoicePanel({
   }, [v.phase, forceTextMode]);
 
   useEffect(() => {
-    if (!continuous || forceTextMode) return;
+    if (!continuous || forceTextMode || frozen) return;
+    // В awaiting_next автозапись не стартуем — пользователь должен явно нажать
+    // «К следующему вопросу», чтобы получить новый question.
     if (v.phase === "listening" && !v.recording && v.segments === 0) {
       void v.startRecording();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [continuous, forceTextMode, v.phase, v.current?.itemId]);
+  }, [continuous, forceTextMode, frozen, v.phase, v.current?.itemId]);
 
   const completed = v.log.filter((l) => l.verdict !== null && !l.isFollowUp).length;
+  // Номер текущего вопроса в потоке голосовых: уникальные answered + 1, если
+  // текущий ещё не отвечен (обычный кейс), либо просто answered, если current
+  // — follow-up к уже отвеченному вопросу.
+  const answeredItemIds = new Set(
+    v.log.filter((l) => !l.isFollowUp).map((l) => l.itemId),
+  );
+  const currentNumber = v.current
+    ? answeredItemIds.has(v.current.itemId)
+      ? answeredItemIds.size
+      : answeredItemIds.size + 1
+    : answeredItemIds.size;
   const canRecord = (v.phase === "listening" || v.recording) && !textMode;
   const canSubmit =
     v.phase === "listening" && (v.recording || v.segments > 0) && !textMode;
   const canDiscard =
     v.phase === "listening" && !v.recording && v.segments > 0 && !textMode;
   const canText = v.phase === "listening" && !v.recording;
-  const canSkip = !!v.current && !v.recording && v.phase !== "thinking";
+  // skip только до того, как пользователь ответил (фаза listening). После
+  // evaluation сервер ждёт `next`, не `skip` — иначе зальёт verdict как skipped.
+  const canSkip =
+    !!v.current && !v.recording && v.phase === "listening";
+  const canNext = v.phase === "awaiting_next";
 
   const isTimeUp = v.phase === "done" && v.doneReason === "time_up";
   const phaseLabel = isTimeUp
@@ -111,10 +119,12 @@ export default function VoicePanel({
     micHelp = "Нажмите микрофон, чтобы начать запись";
   else if (v.phase === "speaking") micHelp = "Слушайте вопрос...";
   else if (v.phase === "thinking") micHelp = "Подождите...";
+  else if (v.phase === "awaiting_next")
+    micHelp = "Ответ оценён — нажмите «К следующему вопросу», чтобы продолжить";
 
   return (
     <div
-      className="card"
+      className="card vi-stack"
       style={{
         display: "flex",
         flexDirection: "column",
@@ -138,7 +148,7 @@ export default function VoicePanel({
             {forceTextMode ? "TEXT INTERVIEW" : "VOICE INTERVIEW"}
           </span>
           <span className="pill">
-            {completed}/{totalVoice}
+            {currentNumber}/{totalVoice}
           </span>
         </div>
         <span
@@ -164,14 +174,16 @@ export default function VoicePanel({
         </span>
       </div>
 
-      {/* Agent visualization (только для голоса) */}
-      {!forceTextMode && (
+      {/* Agent visualization (только для голоса). В textMode скрываем —
+          orb с волной съедает половину высоты карточки и вытесняет textarea. */}
+      {!forceTextMode && !textMode && (
         <div
           style={{
             position: "relative",
-            padding: "20px 18px 12px",
+            padding: "12px 18px 10px",
             borderBottom: "1px solid var(--bg-line)",
             overflow: "hidden",
+            flexShrink: 0,
           }}
         >
           <div
@@ -184,15 +196,19 @@ export default function VoicePanel({
               display: "flex",
               flexDirection: "column",
               alignItems: "center",
-              gap: 12,
+              gap: 8,
             }}
           >
-            <Orb state={phaseToOrbState(v.phase)} />
+            <Orb
+              state={phaseToOrbState(v.phase)}
+              active={v.playing || v.recording}
+            />
             <Wave
               bars={32}
               intense={
                 v.phase === "speaking" ? 1.0 : v.phase === "listening" ? 0.7 : 0.3
               }
+              active={v.playing || v.recording}
             />
           </div>
         </div>
@@ -201,9 +217,10 @@ export default function VoicePanel({
       {/* Question */}
       <div
         style={{
-          padding: "16px 20px",
+          padding: "12px 20px",
           borderBottom: "1px solid var(--bg-line)",
-          minHeight: 100,
+          minHeight: 70,
+          flexShrink: 0,
         }}
       >
         {v.current ? (
@@ -240,67 +257,42 @@ export default function VoicePanel({
 
       {v.timeWarningRemainingSec !== null && v.phase !== "done" && (
         <div
-          style={{
-            margin: "12px 16px 0",
-            padding: "8px 12px",
-            background: "var(--warn-soft)",
-            border: "1px solid oklch(0.40 0.08 75)",
-            borderRadius: "var(--r-2)",
-            color: "var(--warn)",
-            fontSize: 12,
-          }}
+          className="state-block state-block--warn"
+          style={{ margin: "12px 16px 0", fontSize: 12 }}
         >
-          ⏱ Осталось ~{Math.ceil((v.timeWarningRemainingSec || 0) / 60)} мин — постарайтесь
-          закончить текущий вопрос.
+          <span>
+            ⏱ Осталось ~{Math.ceil((v.timeWarningRemainingSec || 0) / 60)} мин —
+            постарайтесь закончить текущий вопрос.
+          </span>
         </div>
       )}
 
       {v.reconnecting && (
         <div
+          className="state-block state-block--info"
           style={{
             margin: "12px 16px 0",
-            padding: "8px 12px",
-            background: "oklch(0.30 0.05 235)",
-            border: "1px solid oklch(0.40 0.08 235)",
-            borderRadius: "var(--r-2)",
-            color: "var(--info)",
             fontSize: 12,
-            display: "flex",
             alignItems: "center",
-            gap: 8,
           }}
         >
-          <span className="dot dot--live" style={{ background: "var(--info)" }} />
-          Восстанавливаем соединение...
+          <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span className="dot dot--live" style={{ background: "var(--info)" }} />
+            Восстанавливаем соединение...
+          </span>
         </div>
       )}
 
       {v.error && (
         <div
-          style={{
-            margin: "12px 16px 0",
-            padding: "8px 12px",
-            background: "var(--danger-soft)",
-            border: "1px solid oklch(0.40 0.10 25)",
-            borderRadius: "var(--r-2)",
-            color: "oklch(0.78 0.16 25)",
-            fontSize: 12,
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 8,
-          }}
+          className="state-block state-block--danger"
+          style={{ margin: "12px 16px 0", fontSize: 12 }}
         >
           <span>{v.error.message}</span>
           <button
             type="button"
             onClick={v.dismissError}
-            style={{
-              fontSize: 11,
-              color: "oklch(0.78 0.16 25)",
-              textDecoration: "underline",
-              background: "none",
-              border: "none",
-            }}
+            className="state-block__close"
           >
             Закрыть
           </button>
@@ -308,15 +300,16 @@ export default function VoicePanel({
       )}
 
       {/* Mic controls */}
-      {v.phase !== "done" && !forceTextMode && (
+      {!frozen && v.phase !== "done" && !forceTextMode && (
         <div
           style={{
-            padding: "16px 18px",
+            padding: "12px 18px",
             borderBottom: "1px solid var(--bg-line)",
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
-            gap: 10,
+            gap: 8,
+            flexShrink: 0,
           }}
         >
           <button
@@ -326,8 +319,8 @@ export default function VoicePanel({
             aria-pressed={v.recording}
             style={{
               position: "relative",
-              width: 68,
-              height: 68,
+              width: 56,
+              height: 56,
               borderRadius: "50%",
               border: "none",
               cursor: canRecord ? "pointer" : "not-allowed",
@@ -341,7 +334,7 @@ export default function VoicePanel({
               alignItems: "center",
               justifyContent: "center",
               boxShadow: v.recording
-                ? "0 0 0 4px oklch(0.68 0.20 25 / 0.25)"
+                ? "0 0 0 4px var(--mic-recording-ring)"
                 : canRecord
                   ? "var(--glow-accent)"
                   : "none",
@@ -354,12 +347,12 @@ export default function VoicePanel({
                   position: "absolute",
                   inset: 0,
                   borderRadius: "50%",
-                  background: "oklch(0.68 0.20 25 / 0.4)",
+                  background: "var(--mic-recording-pulse)",
                   animation: "breathe 1.2s ease infinite",
                 }}
               />
             )}
-            <Icon name="mic" size={26} />
+            <Icon name="mic" size={22} />
           </button>
           <div
             style={{
@@ -422,28 +415,33 @@ export default function VoicePanel({
             >
               <Icon name="refresh" size={11} />
             </button>
+            {canNext ? (
+              <button
+                type="button"
+                onClick={v.next}
+                className="btn btn--primary btn--sm"
+                title="К следующему вопросу"
+                aria-label="К следующему вопросу"
+              >
+                К следующему <Icon name="arrow-right" size={11} />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={v.skip}
+                disabled={!canSkip}
+                className="btn btn--sm"
+                title="Пропустить вопрос"
+                aria-label="Пропустить вопрос"
+              >
+                <Icon name="arrow-right" size={11} />
+              </button>
+            )}
           </div>
-          <button
-            type="button"
-            onClick={v.skip}
-            disabled={!canSkip}
-            style={{
-              fontSize: 12,
-              color: "var(--ink-3)",
-              padding: "5px 10px",
-              borderRadius: "var(--r-2)",
-              border: "1px dashed var(--bg-line)",
-              background: "transparent",
-              cursor: canSkip ? "pointer" : "not-allowed",
-              opacity: canSkip ? 1 : 0.4,
-            }}
-          >
-            К следующему вопросу <Icon name="arrow-right" size={11} />
-          </button>
         </div>
       )}
 
-      {forceTextMode && v.phase !== "done" && (
+      {forceTextMode && !frozen && v.phase !== "done" && (
         <div
           style={{
             padding: "10px 18px",
@@ -456,15 +454,19 @@ export default function VoicePanel({
         </div>
       )}
 
-      {textMode && (
+      {textMode && !frozen && (
         <div
           style={{
             padding: "12px 18px",
-            borderBottom: "1px solid var(--bg-line)",
             background: "var(--bg-0)",
             display: "flex",
             flexDirection: "column",
             gap: 8,
+            // flex:1 + minHeight:0 — блок забирает всё свободное пространство
+            // карточки, textarea ниже растягивается, а кнопка «Отправить текстом»
+            // не уезжает за нижнюю границу.
+            flex: 1,
+            minHeight: 0,
           }}
         >
           <div style={{ fontSize: 11, color: "var(--ink-3)" }}>
@@ -474,9 +476,8 @@ export default function VoicePanel({
             value={textDraft}
             onChange={(e) => setTextDraft(e.target.value)}
             placeholder="Напишите ответ или код..."
-            rows={5}
             className="input textarea mono"
-            style={{ resize: "vertical", fontSize: 12 }}
+            style={{ resize: "none", fontSize: 12, flex: 1, minHeight: 0 }}
             disabled={v.phase === "thinking"}
           />
           <div
@@ -512,115 +513,55 @@ export default function VoicePanel({
             </div>
           </div>
           {forceTextMode && v.phase !== "done" && (
-            <div style={{ display: "flex", justifyContent: "flex-end", paddingTop: 4 }}>
-              <button
-                type="button"
-                onClick={v.skip}
-                disabled={!canSkip}
-                style={{
-                  fontSize: 12,
-                  color: "var(--ink-3)",
-                  padding: "5px 10px",
-                  borderRadius: "var(--r-2)",
-                  border: "1px dashed var(--bg-line)",
-                  background: "transparent",
-                  cursor: canSkip ? "pointer" : "not-allowed",
-                  opacity: canSkip ? 1 : 0.4,
-                }}
-              >
-                К следующему вопросу →
-              </button>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, paddingTop: 4 }}>
+              {canNext ? (
+                <button
+                  type="button"
+                  onClick={v.next}
+                  className="btn btn--primary btn--sm"
+                  title="К следующему вопросу"
+                >
+                  К следующему вопросу <Icon name="arrow-right" size={11} />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={v.skip}
+                  disabled={!canSkip}
+                  style={{
+                    fontSize: 12,
+                    color: "var(--ink-3)",
+                    padding: "5px 10px",
+                    borderRadius: "var(--r-2)",
+                    border: "1px dashed var(--bg-line)",
+                    background: "transparent",
+                    cursor: canSkip ? "pointer" : "not-allowed",
+                    opacity: canSkip ? 1 : 0.4,
+                  }}
+                >
+                  Пропустить вопрос →
+                </button>
+              )}
             </div>
           )}
         </div>
       )}
 
-      {/* Transcript log */}
-      <div
-        ref={logRef}
-        style={{
-          flex: 1,
-          overflowY: "auto",
-          padding: "8px 20px 20px",
-          minHeight: 0,
-        }}
-      >
-        {v.log.map((entry, idx) => (
-          <div key={idx} className="transcript-row">
-            <div className="transcript-row__time mono">{idx + 1}</div>
-            <div>
-              <div
-                className={`transcript-row__author transcript-row__author--${
-                  entry.isFollowUp ? "agent" : "user"
-                }`}
-              >
-                {entry.topic.toUpperCase()}
-                {entry.isFollowUp && " · FOLLOW-UP"}
-              </div>
-              <div
-                className="mono upper"
-                style={{ color: "var(--accent)", marginTop: 4, marginBottom: 2 }}
-              >
-                Вопрос
-              </div>
-              <div
-                className="transcript-row__text"
-                style={{ fontSize: 13, color: "var(--ink-2)" }}
-              >
-                {entry.question}
-              </div>
-              <div
-                className="mono upper"
-                style={{ color: "var(--ink-3)", marginTop: 8, marginBottom: 2 }}
-              >
-                Ответ
-              </div>
-              <div
-                style={{
-                  fontSize: 13,
-                  color: "var(--ink-1)",
-                  paddingLeft: 10,
-                  borderLeft: "2px solid var(--accent)",
-                  background: "var(--bg-2)",
-                  padding: "6px 10px",
-                  borderRadius: "0 var(--r-2) var(--r-2) 0",
-                }}
-              >
-                {entry.answer || (
-                  <span style={{ color: "var(--ink-4)" }}>(пусто)</span>
-                )}
-              </div>
-              {entry.verdict && (
-                <div
-                  style={{
-                    marginTop: 8,
-                    display: "flex",
-                    gap: 8,
-                    alignItems: "flex-start",
-                  }}
-                >
-                  <span
-                    className={`pill ${
-                      entry.verdict === "correct"
-                        ? "pill--accent"
-                        : entry.verdict === "partial"
-                          ? "pill--warn"
-                          : entry.verdict === "skipped"
-                            ? ""
-                            : "pill--danger"
-                    }`}
-                  >
-                    {entry.verdict}
-                  </span>
-                  <span style={{ fontSize: 11, color: "var(--ink-3)", lineHeight: 1.55 }}>
-                    {entry.rationale}
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
+      {frozen && (
+        <div
+          className="state-block state-block--danger"
+          style={{
+            margin: "16px",
+            fontSize: 13,
+            justifyContent: "center",
+            textAlign: "center",
+          }}
+        >
+          <span>
+            ⏱ Время сессии истекло. Нажмите «Завершить», чтобы получить отчёт.
+          </span>
+        </div>
+      )}
     </div>
   );
 }

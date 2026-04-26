@@ -224,15 +224,8 @@ export default function RequirementsDetail() {
 
       {regenerateMut.isError && (
         <div
-          style={{
-            marginBottom: 16,
-            padding: "10px 14px",
-            background: "var(--danger-soft)",
-            border: "1px solid oklch(0.40 0.10 25)",
-            borderRadius: "var(--r-2)",
-            color: "oklch(0.78 0.16 25)",
-            fontSize: 13,
-          }}
+          className="state-block state-block--danger"
+          style={{ marginBottom: 16, fontSize: 13 }}
         >
           Не удалось перегенерировать банк. Попробуйте ещё раз.
         </div>

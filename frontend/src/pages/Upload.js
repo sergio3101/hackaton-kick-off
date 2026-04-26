@@ -94,14 +94,7 @@ export default function Upload() {
                                             const n = Number(e.target.value);
                                             if (Number.isFinite(n))
                                                 setQuestionsPerPair(Math.max(1, Math.min(10, n)));
-                                        }, className: "input", style: { width: 80, textAlign: "center" } }), _jsxs("span", { style: { fontSize: 12, color: "var(--ink-3)", lineHeight: 1.5 }, children: ["\u041F\u043E \u0443\u043C\u043E\u043B\u0447\u0430\u043D\u0438\u044E 5. \u041D\u0430 \u043A\u0430\u0436\u0434\u0443\u044E \u0442\u0435\u043C\u0443 \u0441\u0433\u0435\u043D\u0435\u0440\u0438\u0440\u0443\u0435\u0442\u0441\u044F", " ", _jsx("strong", { className: "mono", style: { color: "var(--accent)" }, children: questionsPerPair * 3 }), " ", "\u0432\u043E\u043F\u0440\u043E\u0441\u043E\u0432 (junior + middle + senior)."] })] })] }), error && (_jsx("div", { style: {
-                            padding: "10px 14px",
-                            background: "var(--danger-soft)",
-                            border: "1px solid oklch(0.40 0.10 25)",
-                            borderRadius: "var(--r-2)",
-                            color: "oklch(0.78 0.16 25)",
-                            fontSize: 13,
-                        }, children: error })), _jsxs("div", { style: {
+                                        }, className: "input", style: { width: 80, textAlign: "center" } }), _jsxs("span", { style: { fontSize: 12, color: "var(--ink-3)", lineHeight: 1.5 }, children: ["\u041F\u043E \u0443\u043C\u043E\u043B\u0447\u0430\u043D\u0438\u044E 5. \u041D\u0430 \u043A\u0430\u0436\u0434\u0443\u044E \u0442\u0435\u043C\u0443 \u0441\u0433\u0435\u043D\u0435\u0440\u0438\u0440\u0443\u0435\u0442\u0441\u044F", " ", _jsx("strong", { className: "mono", style: { color: "var(--accent)" }, children: questionsPerPair * 3 }), " ", "\u0432\u043E\u043F\u0440\u043E\u0441\u043E\u0432 (junior + middle + senior)."] })] })] }), error && (_jsx("div", { className: "state-block state-block--danger", style: { fontSize: 13 }, children: error })), _jsxs("div", { style: {
                             display: "flex",
                             justifyContent: "space-between",
                             alignItems: "center",

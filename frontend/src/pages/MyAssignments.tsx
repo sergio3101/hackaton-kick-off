@@ -13,6 +13,13 @@ export default function MyAssignments() {
     queryKey: ["me", "assignments"],
     queryFn: async () =>
       (await api.get<AssignmentDetailOut[]>("/api/me/assignments")).data,
+    // Глобально queryClient держит данные «свежими» 30 секунд и не рефетчит
+    // при focus — иначе только что назначенный админом кикофф не появится у
+    // пользователя без F5. Эта страница — основная точка входа после логина,
+    // здесь надёжнее всегда фетчить заново.
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
   });
 
   const startM = useMutation({

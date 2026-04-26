@@ -9,6 +9,7 @@ from sqlalchemy import func
 
 from app.auth import get_current_user, is_admin, require_admin
 from app.db import get_db
+from app.lang_detect import detect_coding_language
 from app.llm.evaluate import make_overall_summary, review_code
 from app.llm.generate import generate_coding_tasks
 from app.models import (
@@ -98,11 +99,15 @@ def list_sessions(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[SessionOut]:
-    q = db.query(InterviewSession).filter(InterviewSession.user_id == user.id)
+    q = db.query(InterviewSession)
+    # Админ видит все сессии всех пользователей (история команды);
+    # обычный пользователь — только свои.
+    if not is_admin(user):
+        q = q.filter(InterviewSession.user_id == user.id)
     if requirements_id is not None:
         q = q.filter(InterviewSession.requirements_id == requirements_id)
     rows = q.order_by(InterviewSession.created_at.desc()).all()
-    # Обычный user видит только опубликованные отчёты в списке.
+    # Обычный user видит только опубликованные отчёты завершённых сессий.
     if not is_admin(user):
         rows = [r for r in rows if r.published_at is not None or r.status != SessionStatus.finished]
     return [SessionOut.model_validate(r) for r in rows]
@@ -133,13 +138,25 @@ def create_session(
     # Дедупликация по нормализованному prompt_text — защищает от LLM-сгенерированных
     # одинаковых вопросов с разными bank.id (баг повторов в одной сессии).
     seen_prompts: set[str] = set()
-    by_topic: dict[str, list[QuestionBank]] = {}
+    raw_by_topic: dict[str, list[QuestionBank]] = {}
     for q in bank:
         norm = " ".join((q.prompt or "").split()).lower()
         if not norm or norm in seen_prompts:
             continue
         seen_prompts.add(norm)
-        by_topic.setdefault(q.topic, []).append(q)
+        raw_by_topic.setdefault(q.topic, []).append(q)
+
+    # Группировка вопросов идёт в том порядке, в каком темы перечислены в
+    # selected_topics — иначе порядок тем определяется QuestionBank.id и
+    # стеки в интервью идут «случайно». Темы из bank, которых нет в выборе
+    # админа (защита от рассинхрона), добавляем в хвост.
+    by_topic: dict[str, list[QuestionBank]] = {}
+    for t in payload.selected_topics:
+        if t in raw_by_topic:
+            by_topic[t] = raw_by_topic[t]
+    for t, items in raw_by_topic.items():
+        if t not in by_topic:
+            by_topic[t] = items
 
     chosen = _pick_voice_questions(by_topic, VOICE_QUESTIONS_PER_SESSION)
 
@@ -181,7 +198,9 @@ def create_session(
             prompt_text=q.prompt,
             criteria=q.criteria,
         ))
+    session_default_lang = task_set.language or "python"
     for j, task in enumerate(task_set.tasks):
+        item_lang = detect_coding_language(task.topic, session_default_lang)
         db.add(SessionQuestion(
             session_id=sess.id,
             idx=len(chosen) + j,
@@ -190,6 +209,7 @@ def create_session(
             topic=task.topic or "coding",
             prompt_text=task.prompt,
             criteria="",
+            coding_language=item_lang,
         ))
     db.commit()
     db.refresh(sess)
@@ -250,8 +270,12 @@ def run_coding(
     if coding_item is None:
         raise HTTPException(status_code=404, detail="Coding task not found in session")
 
+    item_lang = (
+        coding_item.coding_language
+        or detect_coding_language(coding_item.topic, sess.coding_task_language)
+    )
     try:
-        result = sandbox_run(sess.coding_task_language, payload.code)
+        result = sandbox_run(item_lang, payload.code)
     except UnsupportedLanguageError as exc:
         raise HTTPException(
             status_code=400,
@@ -292,9 +316,13 @@ def submit_coding(
     if coding_item is None:
         raise HTTPException(status_code=404, detail="Coding task not found in session")
 
+    review_lang = (
+        coding_item.coding_language
+        or detect_coding_language(coding_item.topic, sess.coding_task_language)
+    )
     review = review_code(
         task_prompt=coding_item.prompt_text,
-        language=sess.coding_task_language,
+        language=review_lang,
         code=payload.code,
         session_id=sess.id,
         db=db,
