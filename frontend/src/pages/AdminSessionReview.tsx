@@ -117,7 +117,7 @@ export default function AdminSessionReview() {
             <Stat
               label="cost · LLM/TTS/STT"
               value={
-                reportQ.data?.total_cost_usd
+                typeof reportQ.data?.total_cost_usd === "number"
                   ? `$${reportQ.data.total_cost_usd.toFixed(4)}`
                   : "—"
               }

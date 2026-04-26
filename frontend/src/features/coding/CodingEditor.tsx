@@ -181,7 +181,7 @@ export default function CodingEditor({
             setCode(active.id, v ?? "");
           }}
           onMount={(editor, monaco) => {
-            editor.onDidPaste((e) => {
+            editor.onDidPaste((e: any) => {
               const id = activeIdRef.current;
               if (id === null) return;
               const model = editor.getModel();

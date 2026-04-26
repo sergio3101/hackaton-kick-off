@@ -242,6 +242,8 @@ def start_session(
     sess = db.get(InterviewSession, session_id)
     if sess is None or sess.user_id != user.id:
         raise HTTPException(status_code=404, detail="Session not found")
+    if sess.status == SessionStatus.finished:
+        raise HTTPException(status_code=400, detail="Сессия уже завершена")
     if sess.status == SessionStatus.draft:
         sess.status = SessionStatus.active
         sess.started_at = datetime.now(timezone.utc)

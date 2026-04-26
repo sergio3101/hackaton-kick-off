@@ -12,6 +12,10 @@ interface Props {
   continuous?: boolean;
   textMode?: boolean;
   frozen?: boolean;
+  /** true — у сессии истекло время или она finished. Голосовая часть и кодинг
+   *  замораживаются, баннер красный. false при штатном done(completed) — у
+   *  кандидата ещё есть время добить кодинг. */
+  sessionTimeUp?: boolean;
 }
 
 const PHASE_LABEL: Record<string, string> = {
@@ -49,6 +53,7 @@ export default function VoiceInteract({
   continuous = false,
   textMode: forceTextMode = false,
   frozen = false,
+  sessionTimeUp = false,
 }: Props) {
   const [textMode, setTextMode] = useState(forceTextMode);
   const [textDraft, setTextDraft] = useState("");
@@ -80,17 +85,14 @@ export default function VoiceInteract({
   }, [continuous, forceTextMode, frozen, v.phase, v.current?.itemId]);
 
   const completed = v.log.filter((l) => l.verdict !== null && !l.isFollowUp).length;
-  // Номер текущего вопроса в потоке голосовых: уникальные answered + 1, если
-  // текущий ещё не отвечен (обычный кейс), либо просто answered, если current
-  // — follow-up к уже отвеченному вопросу.
-  const answeredItemIds = new Set(
-    v.log.filter((l) => !l.isFollowUp).map((l) => l.itemId),
-  );
+  // Номер текущего вопроса в потоке голосовых: используем серверный idx,
+  // который инкрементируется и при ответе, и при skip. Если опираться на
+  // длину лога, как раньше, — skipped не попадают (transcript для них не
+  // приходит) и счётчик отстаёт ровно на число пропусков.
+  // На follow-up idx остаётся тем же (та же запись банка) — счётчик не прыгает.
   const currentNumber = v.current
-    ? answeredItemIds.has(v.current.itemId)
-      ? answeredItemIds.size
-      : answeredItemIds.size + 1
-    : answeredItemIds.size;
+    ? v.current.idx + 1
+    : completed;
   const canRecord = (v.phase === "listening" || v.recording) && !textMode;
   const canSubmit =
     v.phase === "listening" && (v.recording || v.segments > 0) && !textMode;
@@ -549,7 +551,7 @@ export default function VoiceInteract({
 
       {frozen && (
         <div
-          className="state-block state-block--danger"
+          className={`state-block ${sessionTimeUp ? "state-block--danger" : "state-block--info"}`}
           style={{
             margin: "16px",
             fontSize: 13,
@@ -558,7 +560,9 @@ export default function VoiceInteract({
           }}
         >
           <span>
-            ⏱ Время сессии истекло. Нажмите «Завершить», чтобы получить отчёт.
+            {sessionTimeUp
+              ? "⏱ Время сессии истекло. Нажмите «Завершить», чтобы получить отчёт."
+              : "✓ Все голосовые вопросы пройдены. Перейдите во вкладку «Лайв-кодинг» или дождитесь окончания таймера и нажмите «Завершить»."}
           </span>
         </div>
       )}

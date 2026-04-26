@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import type { editor } from "monaco-editor";
 
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthProvider";
@@ -102,7 +101,7 @@ export default function Interview() {
 
   // Monaco при первом показе через display:none может остаться 0×0 — нужен
   // editor.layout() при переключении на coding-таб.
-  const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
+  const editorRef = useRef<any>(null);
   useEffect(() => {
     if (activeTab === "coding") {
       requestAnimationFrame(() => editorRef.current?.layout());
@@ -158,11 +157,14 @@ export default function Interview() {
   const codingTotal = coding.codingItems.length;
   const phaseActive =
     v.phase === "speaking" || v.phase === "listening" || v.phase === "thinking";
-  const frozen =
-    timeUp ||
-    v.phase === "done" ||
-    v.doneReason === "time_up" ||
-    data.status === "finished";
+  // Тайм-ап сессии целиком — блокирует и голос, и кодинг, и таймер.
+  const sessionTimeUp =
+    timeUp || v.doneReason === "time_up" || data.status === "finished";
+  // Голосовая часть «заморожена» дополнительно при штатном `done(completed)` —
+  // больше вопросов не будет, но у пользователя ещё есть время добить кодинг.
+  const voiceFrozen = sessionTimeUp || v.phase === "done";
+  // Кодинг блокируем только когда время реально вышло (или сессия finished).
+  const codingFrozen = sessionTimeUp;
 
   return (
     <div
@@ -222,7 +224,7 @@ export default function Interview() {
             startedAtIso={data.started_at}
             localStartedAtMs={localStartedAt}
             targetMin={data.target_duration_min ?? 12}
-            running={started && data.status !== "finished" && !frozen}
+            running={started && data.status !== "finished" && !sessionTimeUp}
             onTimeUp={() => setTimeUp(true)}
           />
           {!started && (
@@ -329,7 +331,8 @@ export default function Interview() {
               totalVoice={totalVoice}
               continuous={continuous}
               textMode={isTextMode}
-              frozen={frozen}
+              frozen={voiceFrozen}
+              sessionTimeUp={sessionTimeUp}
             />
           ) : (
             <VoiceStartStub
@@ -358,7 +361,7 @@ export default function Interview() {
               editorRef.current = editor;
             }}
             onSubmit={() => void coding.submit()}
-            frozen={frozen}
+            frozen={codingFrozen}
           />
         </div>
 

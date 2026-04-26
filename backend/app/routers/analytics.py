@@ -34,6 +34,11 @@ VERDICT_SCORE: dict[Verdict, float] = {
 }
 # skipped исключаем из расчёта среднего.
 
+# Тема считается «слабой» если avg_score ниже этого порога. Иначе она показала
+# себя нормально и в блок «что подтянуть» не попадает (раньше блок дублировал
+# полный «Score по темам»).
+WEAK_TOPIC_THRESHOLD = 0.6
+
 
 class TopicStat(BaseModel):
     topic: str
@@ -123,7 +128,10 @@ def overview(
     ]
     by_topic.sort(key=lambda x: (-x.answered, x.topic))
 
-    weak_topics = [t for t in by_topic if t.answered >= 2]
+    weak_topics = [
+        t for t in by_topic
+        if t.answered >= 2 and t.avg_score < WEAK_TOPIC_THRESHOLD
+    ]
     weak_topics.sort(key=lambda x: x.avg_score)
     weak_topics = weak_topics[:3]
 

@@ -6,6 +6,7 @@ import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user, hash_password, require_admin
@@ -14,6 +15,7 @@ from app.models import (
     Assignment,
     AssignmentStatus,
     InterviewSession,
+    LLMUsage,
     Requirements,
     SessionStatus,
     User,
@@ -203,11 +205,16 @@ def get_any_session_report(
     sess = db.get(InterviewSession, session_id)
     if sess is None:
         raise HTTPException(status_code=404, detail="Session not found")
+    cost = (
+        db.query(func.coalesce(func.sum(LLMUsage.cost_usd), 0.0))
+        .filter(LLMUsage.session_id == session_id)
+        .scalar()
+    )
     return ReportOut(
         session=SessionOut.model_validate(sess),
         summary=SummaryOut.model_validate(sess.summary) if sess.summary else None,
         items=[SessionItemOut.model_validate(i) for i in sess.items],
-        total_cost_usd=0.0,
+        total_cost_usd=float(cost or 0.0),
     )
 
 

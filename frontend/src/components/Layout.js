@@ -37,7 +37,7 @@ export default function Layout() {
     const crumbs = useMemo(() => {
         const path = location.pathname;
         if (path === "/")
-            return ["Дашборд"];
+            return ["Рабочая область", "Дашборд"];
         if (path === "/projects")
             return ["Проекты"];
         if (path === "/upload")

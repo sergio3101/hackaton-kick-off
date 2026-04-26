@@ -162,12 +162,12 @@ class SessionDetailOut(SessionOut):
 
 
 class CodingReviewIn(BaseModel):
-    code: str
-    paste_chars: int = 0  # C2: суммарное число символов, вставленных через clipboard
+    code: str = Field(min_length=1, max_length=50_000)
+    paste_chars: int = Field(default=0, ge=0)  # C2: суммарное число символов, вставленных через clipboard
 
 
 class CodingRunIn(BaseModel):
-    code: str
+    code: str = Field(min_length=1, max_length=50_000)
 
 
 class CodingRunOut(BaseModel):

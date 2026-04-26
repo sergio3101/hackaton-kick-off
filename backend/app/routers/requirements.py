@@ -45,6 +45,11 @@ class RequirementsPatch(BaseModel):
 
 class RegenerateRequest(BaseModel):
     questions_per_pair: int = Field(default=5, ge=1, le=10)
+    # Если переданы — регенерируем только эти темы (подмножество req.topics).
+    # Если None — регенерируем весь банк (все темы).
+    # Пустой список запрещаем явно — это была частая опечатка вызова с фронта,
+    # которая случайно дёргала полную регенерацию вместо явного выбора.
+    selected_topics: list[str] | None = Field(default=None, min_length=1)
 
 
 @router.get("", response_model=list[RequirementsOut])
@@ -276,6 +281,14 @@ def regenerate_bank(
     if not topics:
         raise HTTPException(status_code=400, detail="У проекта нет тем — нечего перегенерировать")
 
+    selected = payload.selected_topics if payload else None
+    if selected is not None:
+        known = {t.name for t in topics}
+        unknown = [t for t in selected if t not in known]
+        if unknown:
+            raise HTTPException(status_code=400, detail=f"Неизвестные темы: {unknown}")
+        topics = [t for t in topics if t.name in set(selected)]
+
     n = (payload.questions_per_pair if payload else 5)
     logger.info("regenerate_bank: req_id=%d, topics=%d, n_per_pair=%d", req.id, len(topics), n)
     questions: list[ExtractedQuestion] = []
@@ -294,7 +307,10 @@ def regenerate_bank(
         requirements_id=req.id, db=db,
     )
 
-    db.query(QuestionBank).filter(QuestionBank.requirements_id == req.id).delete()
+    bank_q = db.query(QuestionBank).filter(QuestionBank.requirements_id == req.id)
+    if selected is not None:
+        bank_q = bank_q.filter(QuestionBank.topic.in_(selected))
+    bank_q.delete(synchronize_session=False)
     db.flush()
     _persist_bank(db, req.id, full)
     db.commit()

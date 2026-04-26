@@ -24,6 +24,15 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use((r) => r, (error) => {
     if (error?.response?.status === 401) {
         setToken(null);
+        // Жёсткий редирект, чтобы любая защищённая страница успела размонтироваться,
+        // и не было «мёртвой» вкладки с прежним state. На /login и /register не
+        // редиректим — иначе у формы логина пропадёт ошибка «неверный пароль».
+        if (typeof window !== "undefined") {
+            const path = window.location.pathname;
+            if (!path.startsWith("/login") && !path.startsWith("/register")) {
+                window.location.assign("/login");
+            }
+        }
     }
     return Promise.reject(error);
 });
