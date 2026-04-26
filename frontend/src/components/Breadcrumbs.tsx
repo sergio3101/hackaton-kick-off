@@ -7,19 +7,33 @@ export interface BreadcrumbItem {
 
 export default function Breadcrumbs({ items }: { items: BreadcrumbItem[] }) {
   return (
-    <nav aria-label="breadcrumbs" className="text-sm text-slate-500 mb-3">
+    <nav
+      aria-label="breadcrumbs"
+      className="text-sm mb-3"
+      style={{ color: "var(--ink-3)" }}
+    >
       {items.map((it, idx) => {
         const isLast = idx === items.length - 1;
         return (
           <span key={idx}>
             {it.to && !isLast ? (
-              <Link to={it.to} className="hover:text-brand hover:underline">
+              <Link
+                to={it.to}
+                className="hover:underline"
+                style={{ color: "var(--accent)" }}
+              >
                 {it.label}
               </Link>
             ) : (
-              <span className={isLast ? "text-slate-700" : ""}>{it.label}</span>
+              <span style={isLast ? { color: "var(--ink-1)" } : undefined}>
+                {it.label}
+              </span>
             )}
-            {!isLast && <span className="mx-2 text-slate-400">/</span>}
+            {!isLast && (
+              <span className="mx-2" style={{ color: "var(--ink-4)" }}>
+                /
+              </span>
+            )}
           </span>
         );
       })}

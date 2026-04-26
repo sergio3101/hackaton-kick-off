@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import { api } from "../api/client";
@@ -24,9 +24,9 @@ export default function Interview() {
   const isAdmin = user?.role === "admin";
   const [searchParams] = useSearchParams();
   const continuousFromUrl = searchParams.get("continuous") === "1";
-  const [finishing, setFinishing] = useState(false);
   const [finishError, setFinishError] = useState<string | null>(null);
   const [started, setStarted] = useState(false);
+  const queryClient = useQueryClient();
   const [localStartedAt, setLocalStartedAt] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<ActiveTab>("voice");
   const [timeUp, setTimeUp] = useState(false);
@@ -87,7 +87,7 @@ export default function Interview() {
 
   // Подключаемся к WS только после нажатия «Начать».
   useEffect(() => {
-    if (started) v.connect();
+    if (started) void v.connect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [started]);
 
@@ -116,28 +116,36 @@ export default function Interview() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data?.started_at]);
 
-  async function onFinish() {
-    if (!confirm("Завершить интервью и сформировать отчёт?")) return;
-    setFinishing(true);
-    setFinishError(null);
-    try {
-      await api.post<ReportOut>(`/api/sessions/${sessionId}/finish`);
-      if (isAdmin) {
-        navigate(`/sessions/${sessionId}/report`);
-      } else {
-        navigate("/me/assignments");
-      }
-    } catch (err: any) {
+  const finishMutation = useMutation({
+    mutationFn: async () =>
+      (await api.post<ReportOut>(`/api/sessions/${sessionId}/finish`)).data,
+    onSuccess: () => {
+      // Освежаем все списки, в которых сессия была «активной» — иначе
+      // пользователь видит устаревшее состояние при возврате назад.
+      queryClient.invalidateQueries({ queryKey: ["sessions"] });
+      queryClient.invalidateQueries({ queryKey: ["me", "assignments"] });
+      queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
+      queryClient.invalidateQueries({ queryKey: ["report", sessionId] });
+      queryClient.invalidateQueries({ queryKey: ["admin", "assignments"] });
+      if (isAdmin) navigate(`/sessions/${sessionId}/report`);
+      else navigate("/me/assignments");
+    },
+    onError: (err: any) => {
       const status = err?.response?.status;
       const detail = err?.response?.data?.detail;
-      const msg =
+      setFinishError(
         status === 401
           ? "Сессия истекла — войдите заново и повторите."
-          : detail || "Не удалось завершить интервью. Попробуйте ещё раз.";
-      setFinishError(msg);
-    } finally {
-      setFinishing(false);
-    }
+          : detail || "Не удалось завершить интервью. Попробуйте ещё раз.",
+      );
+    },
+  });
+  const finishing = finishMutation.isPending;
+
+  function onFinish() {
+    if (!confirm("Завершить интервью и сформировать отчёт?")) return;
+    setFinishError(null);
+    finishMutation.mutate();
   }
 
   if (isLoading || !data) {

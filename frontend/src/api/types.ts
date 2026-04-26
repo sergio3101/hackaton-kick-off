@@ -187,3 +187,68 @@ export interface AnalyticsOverviewOut {
   weak_topics: TopicStat[];
   trend_30d: TrendPoint[];
 }
+
+// ─── Voice WebSocket protocol ────────────────────────────────────────────────
+// Дискриминированный union серверных сообщений из interview_ws.py.
+// Держим в одном месте, чтобы дрифт схемы фронт↔бэк ловился TypeScript-ом,
+// а не в рантайме.
+
+export type WsDoneReason = "completed" | "time_up";
+
+export interface WsQuestionMsg {
+  type: "question";
+  item_id: number;
+  idx: number;
+  topic: string;
+  text: string;
+  audio_b64: string;
+  is_follow_up: boolean;
+  intro_text: string | null;
+  intro_audio_b64: string | null;
+}
+
+export interface WsTranscriptMsg {
+  type: "transcript";
+  item_id: number;
+  text: string;
+}
+
+export interface WsEvaluationMsg {
+  type: "evaluation";
+  item_id: number;
+  verdict: Verdict;
+  rationale: string;
+  expected_answer: string;
+  explanation: string;
+}
+
+export interface WsAwaitingNextMsg {
+  type: "awaiting_next";
+  item_id: number;
+}
+
+export interface WsTimeWarningMsg {
+  type: "time_warning";
+  remaining_sec: number;
+}
+
+export interface WsDoneMsg {
+  type: "done";
+  reason: WsDoneReason;
+}
+
+export interface WsErrorMsg {
+  type: "error";
+  code?: string;
+  message?: string;
+  recoverable?: boolean;
+}
+
+export type WsServerMessage =
+  | WsQuestionMsg
+  | WsTranscriptMsg
+  | WsEvaluationMsg
+  | WsAwaitingNextMsg
+  | WsTimeWarningMsg
+  | WsDoneMsg
+  | WsErrorMsg;

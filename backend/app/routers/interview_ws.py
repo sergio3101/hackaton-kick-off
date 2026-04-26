@@ -46,7 +46,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 from sqlalchemy.orm import Session
 
-from app.auth import decode_token
+from app.auth import decode_token, decode_ws_ticket
 from app.db import SessionLocal
 from app.llm.evaluate import evaluate_voice_answer
 from app.llm.voice import AudioTooShortError, synthesize_speech, transcribe_audio
@@ -124,13 +124,28 @@ async def _send_question(
 
 @router.websocket("/ws/interview/{session_id}")
 async def interview_ws(websocket: WebSocket, session_id: int) -> None:
+    # Аутентификация: предпочитаем короткоживущий ws-ticket (его и шлёт фронт);
+    # fallback на access-token оставлен на время раскатки и для отладки.
+    ticket = websocket.query_params.get("ticket")
     token = websocket.query_params.get("token")
-    if not token:
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-        return
-    try:
-        user_id = decode_token(token)
-    except Exception:
+    user_id: int | None = None
+    if ticket:
+        try:
+            ticket_user_id, ticket_session_id = decode_ws_ticket(ticket)
+        except Exception:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+        if ticket_session_id != session_id:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+        user_id = ticket_user_id
+    elif token:
+        try:
+            user_id = decode_token(token)
+        except Exception:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+    else:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
 

@@ -7,7 +7,13 @@ from sqlalchemy.orm import Session
 
 from sqlalchemy import func
 
-from app.auth import get_current_user, is_admin, require_admin
+from app.auth import (
+    WS_TICKET_TTL_SECONDS,
+    create_ws_ticket,
+    get_current_user,
+    is_admin,
+    require_admin,
+)
 from app.db import get_db
 from app.lang_detect import detect_coding_language
 from app.llm.evaluate import make_overall_summary, review_code
@@ -231,6 +237,27 @@ def get_session(
     if sess is None or sess.user_id != user.id:
         raise HTTPException(status_code=404, detail="Session not found")
     return _to_detail(sess)
+
+
+@router.post("/{session_id}/ws-ticket")
+def issue_ws_ticket(
+    session_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Короткоживущий тикет для WebSocket-подключения голосового интервью.
+
+    Браузерный WebSocket не позволяет ставить заголовок Authorization, поэтому
+    нужен любой query-параметр. Светить в URL долгоживущий JWT небезопасно —
+    выдаём отдельный тикет на 2 минуты, привязанный к конкретной сессии.
+    """
+    sess = db.get(InterviewSession, session_id)
+    if sess is None or sess.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {
+        "ticket": create_ws_ticket(user.id, session_id),
+        "expires_in": WS_TICKET_TTL_SECONDS,
+    }
 
 
 @router.post("/{session_id}/start", response_model=SessionOut)

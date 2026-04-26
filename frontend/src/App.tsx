@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes, useParams } from "react-router-dom";
 
 import { useAuth } from "./auth/AuthProvider";
+import ErrorBoundary from "./components/ErrorBoundary";
 import Layout from "./components/Layout";
 import AdminAssignments from "./pages/AdminAssignments";
 import AdminSessionReview from "./pages/AdminSessionReview";
@@ -19,7 +20,12 @@ import Upload from "./pages/Upload";
 
 function Private({ children }: { children: JSX.Element }) {
   const { user, loading } = useAuth();
-  if (loading) return <div className="p-6 text-slate-500">Загрузка...</div>;
+  if (loading)
+    return (
+      <div className="p-6" style={{ color: "var(--ink-3)" }}>
+        Загрузка...
+      </div>
+    );
   if (!user) return <Navigate to="/login" replace />;
   return children;
 }
@@ -40,6 +46,14 @@ function UserOnlyInterview() {
 }
 
 export default function App() {
+  return (
+    <ErrorBoundary>
+      <AppRoutes />
+    </ErrorBoundary>
+  );
+}
+
+function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />

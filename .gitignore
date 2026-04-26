@@ -26,6 +26,10 @@ build/
 *.log
 npm-debug.log*
 
+# Frontend: tsc emit artifacts (we use Vite for bundling, tsc -b is type-check only)
+frontend/src/**/*.js
+frontend/tsconfig.tsbuildinfo
+
 # IDE
 .idea/workspace.xml
 .idea/tasks.xml

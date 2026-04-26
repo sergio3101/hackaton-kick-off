@@ -20,7 +20,6 @@ export default function Sessions() {
 
   const sessions = data ?? [];
   const [q, setQ] = useState("");
-  const [semantic, setSemantic] = useState(false);
   const [filter, setFilter] = useState<FilterKey>("all");
 
   const counts = useMemo(() => {
@@ -36,7 +35,7 @@ export default function Sessions() {
     return sessions
       .filter((s) => {
         if (filter !== "all" && s.status !== filter) return false;
-        if (q && !semantic) {
+        if (q) {
           const hay = [
             "#" + s.id,
             s.selected_topics.join(" "),
@@ -54,7 +53,7 @@ export default function Sessions() {
         (a, b) =>
           new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
       );
-  }, [sessions, filter, q, semantic]);
+  }, [sessions, filter, q]);
 
   return (
     <div className="page">
@@ -68,7 +67,7 @@ export default function Sessions() {
           </h1>
           <div className="page-sub">
             {isAdmin
-              ? "Полнотекстовый и семантический поиск по транскриптам, фильтры и быстрые экспорты."
+              ? "Поиск по проекту, темам и уровню, фильтры по статусу."
               : "Опубликованные отчёты по вашим кикоффам."}
           </div>
         </div>
@@ -91,37 +90,16 @@ export default function Sessions() {
         >
           <div className="search" style={{ flex: 1 }}>
             <span className="search__icon">
-              <Icon name={semantic ? "sparkle" : "search"} size={14} />
+              <Icon name="search" size={14} />
             </span>
             <input
               className="input"
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder={
-                semantic
-                  ? "найди, где обсуждали сроки запуска…"
-                  : "поиск по проекту, темам, кандидатам…"
-              }
+              placeholder="поиск по проекту, темам, кандидатам…"
             />
             <span className="search__kbd">⌘K</span>
           </div>
-          <button
-            type="button"
-            onClick={() => setSemantic((s) => !s)}
-            className="btn"
-            style={
-              semantic
-                ? {
-                    background: "var(--accent)",
-                    color: "var(--accent-ink)",
-                    borderColor: "var(--accent)",
-                  }
-                : {}
-            }
-          >
-            <Icon name="sparkle" size={13} />
-            Семантический
-          </button>
           <button type="button" className="btn">
             <Icon name="filter" size={13} />
             Фильтры

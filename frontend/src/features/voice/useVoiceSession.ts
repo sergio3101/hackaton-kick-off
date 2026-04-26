@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { API_BASE_URL, getToken } from "../../api/client";
-import type { Verdict } from "../../api/types";
+import { api, API_BASE_URL } from "../../api/client";
+import type { Verdict, WsServerMessage } from "../../api/types";
 
 export interface VoiceQuestion {
   itemId: number;
@@ -58,10 +58,16 @@ const RECONNECT_DELAYS_MS = [1_000, 2_000, 4_000];  // backoff schedule (max 3 �
 const MIN_TOTAL_RECORDING_MS = 600;
 const MIN_TOTAL_BLOB_BYTES = 1500;
 
-function wsUrl(sessionId: number): string {
-  const token = getToken() || "";
+function wsUrl(sessionId: number, ticket: string): string {
   const base = API_BASE_URL.replace(/^http/, "ws");
-  return `${base}/ws/interview/${sessionId}?token=${encodeURIComponent(token)}`;
+  return `${base}/ws/interview/${sessionId}?ticket=${encodeURIComponent(ticket)}`;
+}
+
+async function fetchWsTicket(sessionId: number): Promise<string> {
+  const { data } = await api.post<{ ticket: string; expires_in: number }>(
+    `/api/sessions/${sessionId}/ws-ticket`,
+  );
+  return data.ticket;
 }
 
 async function blobToBase64(blob: Blob): Promise<string> {
@@ -279,12 +285,33 @@ export function useVoiceSession(sessionId: number) {
     }
   }, []);
 
-  const connect = useCallback(() => {
+  const connect = useCallback(async () => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) return;
 
-    const ws = new WebSocket(wsUrl(sessionId));
-    wsRef.current = ws;
     setState((s) => ({ ...s, phase: "thinking", error: null }));
+
+    let ticket: string;
+    try {
+      ticket = await fetchWsTicket(sessionId);
+    } catch (e: any) {
+      if (!isMountedRef.current) return;
+      setState((s) => ({
+        ...s,
+        phase: "error",
+        error: {
+          code: "ws_ticket_failed",
+          message:
+            e?.response?.data?.detail ||
+            "Не удалось получить разрешение на голосовое подключение",
+          recoverable: false,
+        },
+      }));
+      return;
+    }
+    if (!isMountedRef.current) return;
+
+    const ws = new WebSocket(wsUrl(sessionId, ticket));
+    wsRef.current = ws;
 
     ws.onopen = () => {
       reconnectAttemptRef.current = 0;
@@ -293,9 +320,9 @@ export function useVoiceSession(sessionId: number) {
     };
 
     ws.onmessage = (ev) => {
-      let msg: any;
+      let msg: WsServerMessage;
       try {
-        msg = JSON.parse(ev.data);
+        msg = JSON.parse(ev.data) as WsServerMessage;
       } catch {
         return;  // молча игнорируем невалидный JSON, чтобы не убить хук
       }
@@ -449,7 +476,7 @@ export function useVoiceSession(sessionId: number) {
             reconnectTimerRef.current = null;
             // Защита от reconnect после unmount: setState на unmounted = warning React.
             if (!isMountedRef.current) return;
-            connect();
+            void connect();
           }, delay);
           return { ...s, reconnecting: true };
         }

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 
 import { api } from "../api/client";
@@ -15,23 +16,16 @@ const MODEL_LABELS: Record<LlmModel, string> = {
 
 export default function Upload() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [files, setFiles] = useState<File[]>([]);
   const [text, setText] = useState("");
   const [title, setTitle] = useState("");
   const [questionsPerPair, setQuestionsPerPair] = useState<number>(5);
   const [llmModel, setLlmModel] = useState<LlmModel | "">("");
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (files.length === 0 && !text.trim()) {
-      setError("Загрузите хотя бы один .md файл или вставьте текст");
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
+  const uploadMutation = useMutation({
+    mutationFn: async () => {
       const fd = new FormData();
       if (title.trim()) fd.append("title", title.trim());
       if (text.trim()) fd.append("text", text);
@@ -41,12 +35,28 @@ export default function Upload() {
       const r = await api.post<RequirementsDetailOut>("/api/requirements", fd, {
         headers: { "Content-Type": "multipart/form-data" },
       });
-      navigate(`/requirements/${r.data.id}`);
-    } catch (e: any) {
+      return r.data;
+    },
+    onSuccess: (data) => {
+      // После генерации новых требований — список проектов на дашборде/в Projects
+      // и банк вопросов должны подтянуться без F5.
+      queryClient.invalidateQueries({ queryKey: ["requirements"] });
+      navigate(`/requirements/${data.id}`);
+    },
+    onError: (e: any) => {
       setError(e?.response?.data?.detail || "Не удалось обработать требования");
-    } finally {
-      setBusy(false);
+    },
+  });
+  const busy = uploadMutation.isPending;
+
+  function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (files.length === 0 && !text.trim()) {
+      setError("Загрузите хотя бы один .md файл или вставьте текст");
+      return;
     }
+    setError(null);
+    uploadMutation.mutate();
   }
 
   function onPickFiles(e: React.ChangeEvent<HTMLInputElement>) {
