@@ -133,6 +133,10 @@ class InterviewSession(Base):
     coding_task_language: Mapped[str] = mapped_column(String(64), nullable=False, default="python")
     target_duration_min: Mapped[int] = mapped_column(Integer, nullable=False, default=12)
     mode: Mapped[str] = mapped_column(String(16), nullable=False, default="voice")  # "voice" | "text"
+    # Per-session настройки, скопированные из Assignment при старте.
+    # NULL → fallback на app.config defaults (openai_tts_voice / openai_chat_model).
+    voice: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    llm_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -224,6 +228,10 @@ class Assignment(Base):
         server_default=AssignmentStatus.assigned.value,
     )
     note: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    # Опциональные per-assignment настройки голоса и модели LLM.
+    # NULL означает «дефолт из конфигурации» (см. app.config.Settings).
+    voice: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    llm_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, server_default=func.now()
     )

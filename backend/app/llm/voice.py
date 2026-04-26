@@ -144,12 +144,14 @@ def synthesize_speech(
     *,
     session_id: int | None = None,
     db: Session | None = None,
+    voice: str | None = None,
 ) -> bytes:
     settings = get_settings()
+    tts_voice = voice or settings.openai_tts_voice
     client = get_openai()
     response = client.audio.speech.create(
         model=settings.openai_tts_model,
-        voice=settings.openai_tts_voice,
+        voice=tts_voice,
         input=text,
         response_format="mp3",
     )

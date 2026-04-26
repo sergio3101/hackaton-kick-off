@@ -22,6 +22,8 @@ from app.models import (
     UserRole,
 )
 from app.schemas import (
+    ALLOWED_LLM_MODELS,
+    ALLOWED_VOICES,
     AdminUserCreate,
     AdminUserPatch,
     AssignmentCreate,
@@ -145,6 +147,17 @@ def create_assignment(
     if bad:
         raise HTTPException(status_code=400, detail=f"Неизвестные темы: {bad}")
 
+    if payload.voice is not None and payload.voice not in ALLOWED_VOICES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Голос {payload.voice!r} не поддерживается. Доступно: {list(ALLOWED_VOICES)}",
+        )
+    if payload.llm_model is not None and payload.llm_model not in ALLOWED_LLM_MODELS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Модель {payload.llm_model!r} не поддерживается. Доступно: {list(ALLOWED_LLM_MODELS)}",
+        )
+
     assignment = Assignment(
         admin_id=admin.id,
         user_id=user.id,
@@ -154,6 +167,8 @@ def create_assignment(
         mode=payload.mode,
         target_duration_min=payload.target_duration_min,
         note=payload.note or "",
+        voice=payload.voice,
+        llm_model=payload.llm_model,
         status=AssignmentStatus.assigned,
     )
     db.add(assignment)
@@ -271,6 +286,8 @@ def _assignment_detail(a: Assignment) -> AssignmentDetailOut:
         target_duration_min=a.target_duration_min,
         status=a.status,
         note=a.note,
+        voice=a.voice,
+        llm_model=a.llm_model,
         created_at=a.created_at,
         user_email=a.user.email if a.user else "",
         user_full_name=(a.user.full_name if a.user else "") or "",

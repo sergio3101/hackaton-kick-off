@@ -37,8 +37,28 @@ export interface AssignmentOut {
   target_duration_min: number;
   status: AssignmentStatus;
   note: string;
+  voice?: string | null;
+  llm_model?: string | null;
   created_at: string;
 }
+
+export const TTS_VOICES = [
+  "alloy",
+  "echo",
+  "fable",
+  "onyx",
+  "nova",
+  "shimmer",
+] as const;
+export type TtsVoice = (typeof TTS_VOICES)[number];
+
+export const LLM_MODELS = [
+  "gpt-4o-mini",
+  "gpt-4o",
+  "gpt-4.1-mini",
+  "gpt-4.1",
+] as const;
+export type LlmModel = (typeof LLM_MODELS)[number];
 
 export interface AssignmentDetailOut extends AssignmentOut {
   user_email: string;

@@ -45,8 +45,10 @@ def evaluate_voice_answer(
     session_id: int | None = None,
     voice_signals: str | None = None,
     db: Session | None = None,
+    model: str | None = None,
 ) -> VoiceEvaluation:
     settings = get_settings()
+    chat_model = model or settings.openai_chat_model
     client = get_openai()
     user = (
         f"Контекст проекта:\n{summary}\n\n"
@@ -60,7 +62,7 @@ def evaluate_voice_answer(
             f"rationale): {voice_signals}"
         )
     response = client.chat.completions.create(
-        model=settings.openai_chat_model,
+        model=chat_model,
         messages=[
             {"role": "system", "content": VOICE_EVAL_SYSTEM},
             {"role": "user", "content": user},
@@ -69,7 +71,7 @@ def evaluate_voice_answer(
         temperature=0.2,
     )
     record_chat_usage(
-        kind="voice_eval", model=settings.openai_chat_model,
+        kind="voice_eval", model=chat_model,
         response=response, session_id=session_id, db=db,
     )
     payload = safe_json_loads(response.choices[0].message.content, kind="evaluate")
@@ -96,8 +98,10 @@ def review_code(
     code: str,
     session_id: int | None = None,
     db: Session | None = None,
+    model: str | None = None,
 ) -> CodeReview:
     settings = get_settings()
+    chat_model = model or settings.openai_chat_model
     client = get_openai()
     user = (
         f"Язык: {language}\n\n"
@@ -105,7 +109,7 @@ def review_code(
         f"Решение кандидата:\n```{language}\n{code}\n```"
     )
     response = client.chat.completions.create(
-        model=settings.openai_chat_model,
+        model=chat_model,
         messages=[
             {"role": "system", "content": CODE_REVIEW_SYSTEM},
             {"role": "user", "content": user},
@@ -114,7 +118,7 @@ def review_code(
         temperature=0.2,
     )
     record_chat_usage(
-        kind="code_review", model=settings.openai_chat_model,
+        kind="code_review", model=chat_model,
         response=response, session_id=session_id, db=db,
     )
     payload = safe_json_loads(response.choices[0].message.content, kind="evaluate")
@@ -136,11 +140,13 @@ def make_overall_summary(
     *,
     session_id: int | None = None,
     db: Session | None = None,
+    model: str | None = None,
 ) -> str:
     settings = get_settings()
+    chat_model = model or settings.openai_chat_model
     client = get_openai()
     response = client.chat.completions.create(
-        model=settings.openai_chat_model,
+        model=chat_model,
         messages=[
             {"role": "system", "content": SUMMARY_SYSTEM},
             {"role": "user", "content": items_text},
@@ -149,7 +155,7 @@ def make_overall_summary(
         temperature=0.3,
     )
     record_chat_usage(
-        kind="overall_summary", model=settings.openai_chat_model,
+        kind="overall_summary", model=chat_model,
         response=response, session_id=session_id, db=db,
     )
     payload = safe_json_loads(response.choices[0].message.content, kind="evaluate")

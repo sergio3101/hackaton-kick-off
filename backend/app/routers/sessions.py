@@ -328,6 +328,7 @@ def submit_coding(
         code=payload.code,
         session_id=sess.id,
         db=db,
+        model=sess.llm_model,
     )
 
     coding_item.answer_text = payload.code
@@ -373,7 +374,7 @@ def finish_session(
     if lines:
         try:
             overall = make_overall_summary(
-                "\n\n".join(lines), session_id=sess.id, db=db
+                "\n\n".join(lines), session_id=sess.id, db=db, model=sess.llm_model,
             )
         except Exception:
             # LLM-ошибка не должна блокировать завершение сессии — ставим пустой

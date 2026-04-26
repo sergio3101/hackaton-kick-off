@@ -3,12 +3,16 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { api } from "../api/client";
-import type {
-  AssignmentDetailOut,
-  Level,
-  RequirementsDetailOut,
-  RequirementsOut,
-  User,
+import {
+  LLM_MODELS,
+  TTS_VOICES,
+  type AssignmentDetailOut,
+  type Level,
+  type LlmModel,
+  type RequirementsDetailOut,
+  type RequirementsOut,
+  type TtsVoice,
+  type User,
 } from "../api/types";
 import Icon from "../components/Icon";
 
@@ -20,7 +24,28 @@ interface Form {
   mode: "voice" | "text";
   target_duration_min: number;
   note: string;
+  // null означает «использовать дефолт сервера» — бэк подставит значения из app.config.
+  voice: TtsVoice | null;
+  llm_model: LlmModel | null;
 }
+
+// Подписи на русском для комбобокса голоса (озвучивает интервьюер).
+// Описания — короткие маркеры тембра, чтобы admin понимал что выбрать.
+const VOICE_LABELS: Record<TtsVoice, string> = {
+  alloy: "alloy — нейтральный",
+  echo: "echo — глубокий мужской",
+  fable: "fable — британский акцент",
+  onyx: "onyx — низкий мужской",
+  nova: "nova — мягкий женский",
+  shimmer: "shimmer — звонкий женский",
+};
+
+const MODEL_LABELS: Record<LlmModel, string> = {
+  "gpt-4o-mini": "gpt-4o-mini — быстро и дёшево",
+  "gpt-4o": "gpt-4o — баланс качества",
+  "gpt-4.1-mini": "gpt-4.1-mini",
+  "gpt-4.1": "gpt-4.1 — максимальная точность",
+};
 
 const EMPTY_FORM: Form = {
   user_id: null,
@@ -30,6 +55,8 @@ const EMPTY_FORM: Form = {
   mode: "voice",
   target_duration_min: 12,
   note: "",
+  voice: null,
+  llm_model: null,
 };
 
 export default function AdminAssignments() {
@@ -74,6 +101,8 @@ export default function AdminAssignments() {
           mode: payload.mode,
           target_duration_min: payload.target_duration_min,
           note: payload.note,
+          voice: payload.voice,
+          llm_model: payload.llm_model,
         })
       ).data,
     onSuccess: () => {
@@ -197,6 +226,54 @@ export default function AdminAssignments() {
             >
               <option value="voice">голосовой</option>
               <option value="text">текстовый</option>
+            </select>
+          </FormField>
+
+          <FormField label="Голос (TTS)">
+            <select
+              className="select"
+              value={form.voice ?? ""}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  voice: e.target.value ? (e.target.value as TtsVoice) : null,
+                })
+              }
+              disabled={form.mode === "text"}
+              title={
+                form.mode === "text"
+                  ? "В текстовом режиме голос не используется"
+                  : ""
+              }
+            >
+              <option value="">— по умолчанию —</option>
+              {TTS_VOICES.map((v) => (
+                <option key={v} value={v}>
+                  {VOICE_LABELS[v]}
+                </option>
+              ))}
+            </select>
+          </FormField>
+
+          <FormField label="Модель LLM">
+            <select
+              className="select"
+              value={form.llm_model ?? ""}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  llm_model: e.target.value
+                    ? (e.target.value as LlmModel)
+                    : null,
+                })
+              }
+            >
+              <option value="">— по умолчанию —</option>
+              {LLM_MODELS.map((m) => (
+                <option key={m} value={m}>
+                  {MODEL_LABELS[m]}
+                </option>
+              ))}
             </select>
           </FormField>
         </div>

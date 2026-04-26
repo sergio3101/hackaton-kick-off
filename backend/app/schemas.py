@@ -41,6 +41,17 @@ class AdminUserPatch(BaseModel):
     password: str | None = Field(default=None, min_length=6, max_length=128)
 
 
+# OpenAI TTS поддерживаемые голоса (whitelist для валидации).
+ALLOWED_VOICES: tuple[str, ...] = (
+    "alloy", "echo", "fable", "onyx", "nova", "shimmer",
+)
+# Модели чата, которые admin может выбрать на форме назначения.
+# Сохраняется консервативно: совместимые с json_schema response_format.
+ALLOWED_LLM_MODELS: tuple[str, ...] = (
+    "gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "gpt-4.1",
+)
+
+
 class AssignmentCreate(BaseModel):
     user_id: int
     requirements_id: int
@@ -49,6 +60,8 @@ class AssignmentCreate(BaseModel):
     mode: Literal["voice", "text"] = "voice"
     target_duration_min: int = Field(default=12, ge=5, le=60)
     note: str = Field(default="", max_length=2000)
+    voice: str | None = Field(default=None, max_length=32)
+    llm_model: str | None = Field(default=None, max_length=64)
 
 
 class AssignmentOut(BaseModel):
@@ -63,6 +76,8 @@ class AssignmentOut(BaseModel):
     target_duration_min: int
     status: AssignmentStatus
     note: str
+    voice: str | None = None
+    llm_model: str | None = None
     created_at: datetime
 
 
@@ -142,6 +157,8 @@ class SessionOut(BaseModel):
     coding_task_language: str
     target_duration_min: int = 12
     mode: Literal["voice", "text"] = "voice"
+    voice: str | None = None
+    llm_model: str | None = None
     started_at: datetime | None
     finished_at: datetime | None
     published_at: datetime | None = None

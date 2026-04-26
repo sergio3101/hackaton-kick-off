@@ -98,15 +98,16 @@ async def _send_question(
     session_id: int | None = None,
     db: Session | None = None,
     skip_audio: bool = False,
+    voice: str | None = None,
 ) -> None:
     text = follow_up_text or item.prompt_text
     audio_b64 = ""
     intro_audio_b64: str | None = None
     if not skip_audio:
-        audio = synthesize_speech(text, session_id=session_id, db=db)
+        audio = synthesize_speech(text, session_id=session_id, db=db, voice=voice)
         audio_b64 = base64.b64encode(audio).decode("ascii")
         if intro_text:
-            intro_audio = synthesize_speech(intro_text, session_id=session_id, db=db)
+            intro_audio = synthesize_speech(intro_text, session_id=session_id, db=db, voice=voice)
             intro_audio_b64 = base64.b64encode(intro_audio).decode("ascii")
     await ws.send_json({
         "type": "question",
@@ -167,6 +168,10 @@ async def interview_ws(websocket: WebSocket, session_id: int) -> None:
         time_warning_sent = False
 
         text_only = sess.mode == "text"
+        # Per-session настройки, если admin их выставил при назначении.
+        # NULL → fallback на дефолты в synthesize_speech / evaluate_voice_answer.
+        sess_voice = sess.voice
+        sess_llm_model = sess.llm_model
 
         async def _send_q(
             item: SessionQuestion,
@@ -192,6 +197,7 @@ async def interview_ws(websocket: WebSocket, session_id: int) -> None:
                 session_id=sess.id,
                 db=db,
                 skip_audio=text_only,
+                voice=sess_voice,
             )
 
         async def _send_done(reason: str) -> None:
@@ -244,6 +250,7 @@ async def interview_ws(websocket: WebSocket, session_id: int) -> None:
                 session_id=sess.id,
                 voice_signals=voice_signals,
                 db=db,
+                model=sess_llm_model,
             )
 
             if current_pending:

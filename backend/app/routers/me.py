@@ -99,6 +99,11 @@ def start_assignment(
         mode=a.mode,
         target_duration_min=a.target_duration_min,
         assignment_id=a.id,
+        # Per-assignment настройки голоса/модели прокидываем в сессию,
+        # чтобы WS-обработчик и evaluate_voice_answer могли их прочитать
+        # без дополнительного JOIN-а к assignments.
+        voice=a.voice,
+        llm_model=a.llm_model,
     )
     db.add(sess)
     db.flush()
@@ -228,6 +233,8 @@ def _assignment_detail(a: Assignment) -> AssignmentDetailOut:
         target_duration_min=a.target_duration_min,
         status=a.status,
         note=a.note,
+        voice=a.voice,
+        llm_model=a.llm_model,
         created_at=a.created_at,
         user_email=a.user.email if a.user else "",
         user_full_name=(a.user.full_name if a.user else "") or "",
