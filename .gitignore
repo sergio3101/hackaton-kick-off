@@ -1,0 +1,46 @@
+.DS_store
+.idea
+# Env
+.env.local
+*.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+ux-run
+.playwright-mcp
+qa/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+dist/
+build/
+.vite/
+*.log
+npm-debug.log*
+
+# Frontend: tsc emit artifacts (we use Vite for bundling, tsc -b is type-check only)
+frontend/src/**/*.js
+frontend/tsconfig.tsbuildinfo
+
+# IDE
+.idea/workspace.xml
+.idea/tasks.xml
+.idea/dictionaries/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project
+backend/uploads/
+*.sqlite
+*.db
