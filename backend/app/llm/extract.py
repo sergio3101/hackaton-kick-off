@@ -46,16 +46,18 @@ def extract_requirements(
     requirements_id: int | None = None,
     db: Session | None = None,
     questions_per_pair: int = QUESTIONS_PER_PAIR,
+    model: str | None = None,
 ) -> ExtractionResult:
     settings = get_settings()
+    chat_model = model or settings.openai_chat_model
     client = get_openai()
 
     n = max(1, min(int(questions_per_pair), 10))
     system_prompt = EXTRACT_SYSTEM_TEMPLATE.format(n=n, total_for_4=4 * 3 * n)
 
-    logger.info("extract_requirements: raw_len=%d, n_per_pair=%d", len(raw_text), n)
+    logger.info("extract_requirements: raw_len=%d, n_per_pair=%d, model=%s", len(raw_text), n, chat_model)
     response = client.chat.completions.create(
-        model=settings.openai_chat_model,
+        model=chat_model,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": raw_text[:120_000]},
@@ -64,7 +66,7 @@ def extract_requirements(
         temperature=0.4,
     )
     record_chat_usage(
-        kind="extract", model=settings.openai_chat_model,
+        kind="extract", model=chat_model,
         response=response, requirements_id=requirements_id, db=db,
     )
     payload = safe_json_loads(response.choices[0].message.content, kind="extract")
@@ -100,6 +102,7 @@ def generate_questions_for_pair(
     *,
     requirements_id: int | None = None,
     db: Session | None = None,
+    model: str | None = None,
 ) -> list[ExtractedQuestion]:
     """Догенерация вопросов для конкретной пары (тема × уровень).
 
@@ -109,6 +112,7 @@ def generate_questions_for_pair(
         return []
 
     settings = get_settings()
+    chat_model = model or settings.openai_chat_model
     client = get_openai()
 
     user = (
@@ -119,7 +123,7 @@ def generate_questions_for_pair(
         f"Сгенерируй РОВНО {count} вопросов с критериями."
     )
     response = client.chat.completions.create(
-        model=settings.openai_chat_model,
+        model=chat_model,
         messages=[
             {"role": "system", "content": TOPIC_QUESTIONS_SYSTEM},
             {"role": "user", "content": user},
@@ -128,7 +132,7 @@ def generate_questions_for_pair(
         temperature=0.5,
     )
     record_chat_usage(
-        kind="topic_questions", model=settings.openai_chat_model,
+        kind="topic_questions", model=chat_model,
         response=response, requirements_id=requirements_id, db=db,
     )
     payload = safe_json_loads(response.choices[0].message.content, kind="extract")
@@ -153,6 +157,7 @@ def ensure_full_bank(
     target: int = QUESTIONS_PER_PAIR,
     requirements_id: int | None = None,
     db: Session | None = None,
+    model: str | None = None,
 ) -> list[ExtractedQuestion]:
     """Гарантирует, что для каждой пары (topic.name, level) набрано >= target вопросов.
 
@@ -181,6 +186,7 @@ def ensure_full_bank(
                         summary, topic, level, missing,
                         requirements_id=requirements_id,
                         db=db,
+                        model=model,
                     )
                 except Exception:
                     logger.exception("Добор вопросов упал для %r/%s", topic.name, level)

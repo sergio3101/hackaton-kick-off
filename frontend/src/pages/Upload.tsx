@@ -2,8 +2,16 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { api } from "../api/client";
-import type { RequirementsDetailOut } from "../api/types";
+import { LLM_MODELS, type LlmModel, type RequirementsDetailOut } from "../api/types";
 import Icon from "../components/Icon";
+
+// Те же подписи моделей, что в AdminAssignments — единый источник для UX.
+const MODEL_LABELS: Record<LlmModel, string> = {
+  "gpt-4o-mini": "gpt-4o-mini — быстро и дёшево",
+  "gpt-4o": "gpt-4o — баланс качества",
+  "gpt-4.1-mini": "gpt-4.1-mini",
+  "gpt-4.1": "gpt-4.1 — максимальная точность",
+};
 
 export default function Upload() {
   const navigate = useNavigate();
@@ -11,6 +19,7 @@ export default function Upload() {
   const [text, setText] = useState("");
   const [title, setTitle] = useState("");
   const [questionsPerPair, setQuestionsPerPair] = useState<number>(5);
+  const [llmModel, setLlmModel] = useState<LlmModel | "">("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -27,6 +36,7 @@ export default function Upload() {
       if (title.trim()) fd.append("title", title.trim());
       if (text.trim()) fd.append("text", text);
       fd.append("questions_per_pair", String(questionsPerPair));
+      if (llmModel) fd.append("llm_model", llmModel);
       files.forEach((f) => fd.append("files", f));
       const r = await api.post<RequirementsDetailOut>("/api/requirements", fd, {
         headers: { "Content-Type": "multipart/form-data" },
@@ -164,6 +174,38 @@ export default function Upload() {
             className="input textarea mono"
             style={{ resize: "vertical", fontSize: 12 }}
           />
+        </div>
+
+        <div>
+          <label
+            style={{
+              display: "block",
+              fontSize: 11,
+              textTransform: "uppercase",
+              letterSpacing: "0.08em",
+              color: "var(--ink-3)",
+              marginBottom: 6,
+            }}
+          >
+            Модель LLM для извлечения тем и вопросов
+          </label>
+          <select
+            className="select"
+            value={llmModel}
+            onChange={(e) => setLlmModel(e.target.value as LlmModel | "")}
+            style={{ width: "100%" }}
+          >
+            <option value="">— по умолчанию —</option>
+            {LLM_MODELS.map((m) => (
+              <option key={m} value={m}>
+                {MODEL_LABELS[m]}
+              </option>
+            ))}
+          </select>
+          <div style={{ fontSize: 11, color: "var(--ink-4)", marginTop: 6 }}>
+            Выбор модели влияет на качество тем и формулировок. Если пусто —
+            используется значение из конфигурации сервера.
+          </div>
         </div>
 
         <div>

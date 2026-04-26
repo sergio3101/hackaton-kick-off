@@ -27,6 +27,7 @@ from app.models import (
     Verdict,
 )
 from app.schemas import (
+    ALLOWED_LLM_MODELS,
     QuestionOut,
     RequirementsDetailOut,
     RequirementsOut,
@@ -50,6 +51,8 @@ class RegenerateRequest(BaseModel):
     # Пустой список запрещаем явно — это была частая опечатка вызова с фронта,
     # которая случайно дёргала полную регенерацию вместо явного выбора.
     selected_topics: list[str] | None = Field(default=None, min_length=1)
+    # Опциональная модель LLM для этой перегенерации. NULL → дефолт из app.config.
+    llm_model: str | None = Field(default=None, max_length=64)
 
 
 @router.get("", response_model=list[RequirementsOut])
@@ -72,9 +75,17 @@ async def upload_requirements(
     title: str = Form(default="Untitled"),
     text: str | None = Form(default=None),
     questions_per_pair: int = Form(default=5, ge=1, le=10),
+    llm_model: str | None = Form(default=None, max_length=64),
     user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> RequirementsDetailOut:
+    if llm_model is not None and llm_model.strip() == "":
+        llm_model = None
+    if llm_model is not None and llm_model not in ALLOWED_LLM_MODELS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Модель {llm_model!r} не поддерживается. Доступно: {list(ALLOWED_LLM_MODELS)}",
+        )
     chunks: list[str] = []
     if text and text.strip():
         chunks.append(f"# {title or 'inline.md'}\n\n{text.strip()}")
@@ -161,11 +172,13 @@ async def upload_requirements(
         requirements_id=req.id,
         db=db,
         questions_per_pair=questions_per_pair,
+        model=llm_model,
     )
     full_questions = ensure_full_bank(
         extracted.summary, extracted.topics, extracted.questions,
         target=questions_per_pair,
         requirements_id=req.id, db=db,
+        model=llm_model,
     )
 
     req.summary = extracted.summary
@@ -289,8 +302,18 @@ def regenerate_bank(
             raise HTTPException(status_code=400, detail=f"Неизвестные темы: {unknown}")
         topics = [t for t in topics if t.name in set(selected)]
 
+    chosen_model = payload.llm_model if payload else None
+    if chosen_model is not None and chosen_model not in ALLOWED_LLM_MODELS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Модель {chosen_model!r} не поддерживается. Доступно: {list(ALLOWED_LLM_MODELS)}",
+        )
+
     n = (payload.questions_per_pair if payload else 5)
-    logger.info("regenerate_bank: req_id=%d, topics=%d, n_per_pair=%d", req.id, len(topics), n)
+    logger.info(
+        "regenerate_bank: req_id=%d, topics=%d, n_per_pair=%d, model=%s",
+        req.id, len(topics), n, chosen_model or "default",
+    )
     questions: list[ExtractedQuestion] = []
     for topic in topics:
         for level in ("junior", "middle", "senior"):
@@ -298,6 +321,7 @@ def regenerate_bank(
                 questions.extend(generate_questions_for_pair(
                     req.summary, topic, level, n,
                     requirements_id=req.id, db=db,
+                    model=chosen_model,
                 ))
             except Exception:
                 logger.exception("regenerate_bank: pair gen failed topic=%s level=%s", topic.name, level)
@@ -305,6 +329,7 @@ def regenerate_bank(
     full = ensure_full_bank(
         req.summary, topics, questions, target=n,
         requirements_id=req.id, db=db,
+        model=chosen_model,
     )
 
     bank_q = db.query(QuestionBank).filter(QuestionBank.requirements_id == req.id)
