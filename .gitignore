@@ -13,7 +13,6 @@ __pycache__/
 venv/
 ux-run
 .playwright-mcp
-qa/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
