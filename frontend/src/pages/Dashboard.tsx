@@ -71,7 +71,7 @@ export default function Dashboard() {
     return rows.slice(0, 12);
   }, [assignmentsQ.data]);
 
-  if (!isAdmin) return <Navigate to="/me/assignments" replace />;
+  if (!isAdmin) return <Navigate to="/me/stats" replace />;
 
   const projects = projectsQ.data ?? [];
   const sessions = (sessionsQ.data ?? [])

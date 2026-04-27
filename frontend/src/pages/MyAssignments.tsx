@@ -120,7 +120,6 @@ export default function MyAssignments() {
               key={a.id}
               a={a}
               starting={startingId === a.id}
-              disabled={startM.isPending && startingId !== a.id}
               onStart={(mode) => startM.mutate({ id: a.id, mode })}
             />
           ))}
@@ -134,12 +133,10 @@ function AssignmentCard({
   a,
   onStart,
   starting,
-  disabled,
 }: {
   a: AssignmentDetailOut;
   onStart: (mode: "voice" | "text") => void;
   starting: boolean;
-  disabled: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   // Дефолт режима — то, что выбрал админ при создании назначения. Пользователь
@@ -243,7 +240,7 @@ function AssignmentCard({
                   stopBubble(e);
                   onStart(mode);
                 }}
-                disabled={starting || disabled}
+                disabled={starting}
                 className="btn btn--primary"
               >
                 {starting ? (
