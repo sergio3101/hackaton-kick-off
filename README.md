@@ -19,19 +19,7 @@
 
 ## Запуск (Docker, рекомендуемо)
 
-1. Установить Docker Desktop.
-2. Скопировать пример окружения и подставить ключ OpenAI:
-   ```bash
-   cp .env.example .env
-   # отредактировать .env, поставить OPENAI_API_KEY=sk-...
-   ```
-3. Поднять стек:
-   ```bash
-   docker compose up --build
-   ```
-4. Открыть http://localhost:5173. Backend будет на http://localhost:8000 (Swagger UI: `/docs`).
-
-При первом запуске backend автоматически прогонит миграции (`alembic upgrade head`).
+> Подробная пошаговая инструкция с troubleshooting'ом — [doc/QUICKSTART.md](doc/QUICKSTART.md).
 
 ## Локальная разработка (без Docker для backend/frontend)
 
