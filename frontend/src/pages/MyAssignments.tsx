@@ -34,8 +34,13 @@ export default function MyAssignments() {
 
   const [startError, setStartError] = useState<string | null>(null);
   const startM = useMutation({
-    mutationFn: async (id: number) =>
-      (await api.post<SessionDetailOut>(`/api/me/assignments/${id}/start`)).data,
+    mutationFn: async (vars: { id: number; mode: "voice" | "text" }) =>
+      (
+        await api.post<SessionDetailOut>(
+          `/api/me/assignments/${vars.id}/start`,
+          { mode: vars.mode },
+        )
+      ).data,
     onSuccess: (sess) => {
       setStartError(null);
       qc.invalidateQueries({ queryKey: ["me", "assignments"] });
@@ -50,7 +55,9 @@ export default function MyAssignments() {
       );
     },
   });
-  const startingId = startM.isPending ? (startM.variables as number) : null;
+  const startingId = startM.isPending
+    ? (startM.variables as { id: number }).id
+    : null;
 
   if (listQ.isLoading) {
     return (
@@ -114,7 +121,7 @@ export default function MyAssignments() {
               a={a}
               starting={startingId === a.id}
               disabled={startM.isPending && startingId !== a.id}
-              onStart={() => startM.mutate(a.id)}
+              onStart={(mode) => startM.mutate({ id: a.id, mode })}
             />
           ))}
         </div>
@@ -130,11 +137,15 @@ function AssignmentCard({
   disabled,
 }: {
   a: AssignmentDetailOut;
-  onStart: () => void;
+  onStart: (mode: "voice" | "text") => void;
   starting: boolean;
   disabled: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
+  // Дефолт режима — то, что выбрал админ при создании назначения. Пользователь
+  // может переключить под свои условия (например, нет микрофона / Realtime
+  // недоступен) перед стартом новой попытки.
+  const [mode, setMode] = useState<"voice" | "text">(a.mode);
 
   const sessions = a.sessions ?? [];
   const lastSession =
@@ -225,23 +236,26 @@ function AssignmentCard({
               Продолжить <Icon name="arrow-right" size={13} />
             </Link>
           ) : (
-            <button
-              type="button"
-              onClick={(e) => {
-                stopBubble(e);
-                onStart();
-              }}
-              disabled={starting || disabled}
-              className="btn btn--primary"
-            >
-              {starting ? (
-                "Запускаю..."
-              ) : (
-                <>
-                  <Icon name="play" size={13} /> Старт интервью
-                </>
-              )}
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={(e) => {
+                  stopBubble(e);
+                  onStart(mode);
+                }}
+                disabled={starting || disabled}
+                className="btn btn--primary"
+              >
+                {starting ? (
+                  "Запускаю..."
+                ) : (
+                  <>
+                    <Icon name="play" size={13} /> Старт интервью
+                  </>
+                )}
+              </button>
+              <ModeToggle value={mode} onChange={setMode} />
+            </>
           )}
         </div>
       </div>
@@ -304,6 +318,61 @@ function findBestIdx(sessions: AssignmentSessionInfo[]): number {
     }
   }
   return bestIdx;
+}
+
+function ModeToggle({
+  value,
+  onChange,
+}: {
+  value: "voice" | "text";
+  onChange: (m: "voice" | "text") => void;
+}) {
+  const stopBubble = (e: { stopPropagation: () => void }) =>
+    e.stopPropagation();
+  const Item = ({ m, label }: { m: "voice" | "text"; label: string }) => {
+    const active = value === m;
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          stopBubble(e);
+          onChange(m);
+        }}
+        className="mono"
+        style={{
+          flex: 1,
+          padding: "4px 10px",
+          fontSize: 11,
+          textTransform: "uppercase",
+          letterSpacing: "0.06em",
+          background: active ? "var(--accent)" : "transparent",
+          color: active ? "var(--accent-ink)" : "var(--ink-3)",
+          border: "none",
+          borderRadius: "var(--r-2)",
+          cursor: "pointer",
+          transition: "background 120ms",
+        }}
+      >
+        {label}
+      </button>
+    );
+  };
+  return (
+    <div
+      title="Режим следующей попытки"
+      style={{
+        display: "inline-flex",
+        background: "var(--bg-2)",
+        border: "1px solid var(--bg-line)",
+        borderRadius: "var(--r-2)",
+        padding: 2,
+        gap: 2,
+      }}
+    >
+      <Item m="voice" label="голосом" />
+      <Item m="text" label="текстом" />
+    </div>
+  );
 }
 
 function SessionRow({

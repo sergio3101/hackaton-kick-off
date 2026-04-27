@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { api } from "../api/client";
+import { useAuth } from "../auth/AuthProvider";
 import type { User, UserPatch, UserRole } from "../api/types";
 import Icon from "../components/Icon";
 
@@ -16,12 +17,15 @@ interface EditForm {
   email: string;
   full_name: string;
   password: string;
+  role: UserRole;
+  is_active: boolean;
 }
 
 const ROW_GRID = "60px 1fr 130px 80px 36px 36px";
 
 export default function AdminUsers() {
   const qc = useQueryClient();
+  const { user: currentUser } = useAuth();
   const usersQ = useQuery({
     queryKey: ["admin", "users"],
     queryFn: async () => (await api.get<User[]>("/api/admin/users")).data,
@@ -36,7 +40,13 @@ export default function AdminUsers() {
   const [error, setError] = useState<string | null>(null);
 
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [editForm, setEditForm] = useState<EditForm>({ email: "", full_name: "", password: "" });
+  const [editForm, setEditForm] = useState<EditForm>({
+    email: "",
+    full_name: "",
+    password: "",
+    role: "user",
+    is_active: true,
+  });
   const [editError, setEditError] = useState<string | null>(null);
 
   const createM = useMutation({
@@ -63,7 +73,13 @@ export default function AdminUsers() {
 
   const openEdit = (u: User) => {
     setEditingId(u.id);
-    setEditForm({ email: u.email, full_name: u.full_name ?? "", password: "" });
+    setEditForm({
+      email: u.email,
+      full_name: u.full_name ?? "",
+      password: "",
+      role: u.role,
+      is_active: u.is_active ?? true,
+    });
     setEditError(null);
   };
 
@@ -85,6 +101,9 @@ export default function AdminUsers() {
       }
       patch.password = editForm.password;
     }
+    if (editForm.role !== u.role) patch.role = editForm.role;
+    if (editForm.is_active !== (u.is_active ?? true)) patch.is_active = editForm.is_active;
+
     if (Object.keys(patch).length === 0) {
       closeEdit();
       return;
@@ -223,6 +242,7 @@ export default function AdminUsers() {
         )}
         {usersQ.data?.map((u) => {
           const isEditing = editingId === u.id;
+          const isSelf = currentUser?.id === u.id;
           return (
             <div key={u.id} style={{ borderBottom: "1px solid var(--bg-line)" }}>
               <div
@@ -244,24 +264,20 @@ export default function AdminUsers() {
                     {u.full_name || "—"}
                   </div>
                 </div>
-                <select
-                  className="select"
-                  style={{ padding: "5px 8px" }}
-                  value={u.role}
-                  onChange={(e) =>
-                    patchM.mutate({ id: u.id, patch: { role: e.target.value as UserRole } })
-                  }
+                <span
+                  className={`pill ${u.role === "admin" ? "pill--accent" : ""}`}
                 >
-                  <option value="user">user</option>
-                  <option value="admin">admin</option>
-                </select>
-                <input
-                  type="checkbox"
-                  checked={u.is_active ?? true}
-                  onChange={(e) =>
-                    patchM.mutate({ id: u.id, patch: { is_active: e.target.checked } })
-                  }
-                />
+                  {u.role}
+                </span>
+                <span
+                  className="mono"
+                  style={{
+                    color: (u.is_active ?? true) ? "var(--accent)" : "var(--ink-3)",
+                    fontSize: 12,
+                  }}
+                >
+                  {(u.is_active ?? true) ? "✓ да" : "— нет"}
+                </span>
                 <button
                   type="button"
                   onClick={() => (isEditing ? closeEdit() : openEdit(u))}
@@ -277,23 +293,30 @@ export default function AdminUsers() {
                 >
                   <Icon name={isEditing ? "x" : "edit"} size={14} />
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (confirm(`Удалить пользователя ${u.email}?`)) deleteM.mutate(u.id);
-                  }}
-                  title="Удалить"
-                  style={{
-                    color: "var(--danger-fg)",
-                    background: "transparent",
-                    border: "none",
-                    cursor: "pointer",
-                    padding: 4,
-                    display: "inline-flex",
-                  }}
-                >
-                  <Icon name="trash" size={14} />
-                </button>
+                {isSelf ? (
+                  <span
+                    title="Это вы — нельзя удалить самого себя"
+                    style={{ color: "var(--ink-4)", fontSize: 11 }}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (confirm(`Удалить пользователя ${u.email}?`)) deleteM.mutate(u.id);
+                    }}
+                    title="Удалить"
+                    style={{
+                      color: "var(--danger-fg)",
+                      background: "transparent",
+                      border: "none",
+                      cursor: "pointer",
+                      padding: 4,
+                      display: "inline-flex",
+                    }}
+                  >
+                    <Icon name="trash" size={14} />
+                  </button>
+                )}
               </div>
               {isEditing && (
                 <div
@@ -361,6 +384,65 @@ export default function AdminUsers() {
                             if (editError) setEditError(null);
                           }}
                         />
+                      </FormField>
+                      <FormField label="Роль">
+                        <select
+                          className="select"
+                          value={editForm.role}
+                          disabled={isSelf}
+                          title={
+                            isSelf
+                              ? "Нельзя сменить роль самому себе"
+                              : ""
+                          }
+                          onChange={(e) => {
+                            setEditForm({
+                              ...editForm,
+                              role: e.target.value as UserRole,
+                            });
+                            if (editError) setEditError(null);
+                          }}
+                        >
+                          <option value="user">user</option>
+                          <option value="admin">admin</option>
+                        </select>
+                      </FormField>
+                      <FormField label="Активен">
+                        <label
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 8,
+                            padding: "8px 0",
+                            fontSize: 13,
+                            color: "var(--ink-2)",
+                            textTransform: "none",
+                            letterSpacing: 0,
+                          }}
+                          title={
+                            isSelf
+                              ? "Нельзя деактивировать самого себя"
+                              : ""
+                          }
+                        >
+                          <input
+                            type="checkbox"
+                            checked={editForm.is_active}
+                            disabled={isSelf}
+                            onChange={(e) => {
+                              setEditForm({
+                                ...editForm,
+                                is_active: e.target.checked,
+                              });
+                              if (editError) setEditError(null);
+                            }}
+                          />
+                          <span>
+                            {editForm.is_active
+                              ? "пользователь активен"
+                              : "учётная запись отключена"}
+                          </span>
+                        </label>
                       </FormField>
                     </div>
                     {editError && (

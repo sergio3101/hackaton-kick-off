@@ -27,6 +27,7 @@ from app.models import (
 from app.schemas import (
     AssignmentDetailOut,
     AssignmentSessionInfo,
+    AssignmentStartIn,
     SessionDetailOut,
     SessionItemOut,
     SessionOut,
@@ -56,6 +57,7 @@ def my_assignments(
 @router.post("/assignments/{assignment_id}/start", response_model=SessionDetailOut)
 def start_assignment(
     assignment_id: int,
+    payload: AssignmentStartIn | None = None,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> SessionDetailOut:
@@ -69,6 +71,11 @@ def start_assignment(
     last = max(a.sessions, key=lambda s: s.created_at, default=None)
     if last is not None and last.status in (SessionStatus.draft, SessionStatus.active):
         return _to_detail(last)
+
+    # Кандидат может переопределить режим (voice ↔ text) перед стартом —
+    # например, если у него нет микрофона или Realtime недоступен. По умолчанию
+    # используется режим из Assignment.
+    mode = (payload.mode if payload and payload.mode else None) or a.mode
 
     req = db.get(Requirements, a.requirements_id)
     if req is None:
@@ -105,7 +112,7 @@ def start_assignment(
         status=SessionStatus.draft,
         coding_task_prompt="",
         coding_task_language="python",
-        mode=a.mode,
+        mode=mode,
         target_duration_min=a.target_duration_min,
         assignment_id=a.id,
         # Per-assignment настройки голоса/модели прокидываем в сессию,

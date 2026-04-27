@@ -51,6 +51,13 @@
 
 ## Готово / решено
 
+- [x] **P1** **Голосовой режим — параллельная работа нескольких пользователей (демо 5–10 одновременно)** — закрывает риски гонок на shared `SQLAlchemy Session` и burst-rate-limit OpenAI evaluate. Что сделано:
+  - **БД-пул**: `backend/app/db.py` — явные `pool_size=20, max_overflow=10` вместо дефолтных 5+10. Postgres-контейнер дефолтом разрешает 100 коннектов, запас огромный.
+  - **Изоляция БД evaluate-потока**: `_run_evaluation_sync` в `routers/interview_ws.py` теперь открывает собственную `SessionLocal()` и закрывает в `finally`. Раньше использовал замыкание на shared `db` ⇒ потенциальный race с корутинами `client_to_bridge` / `bridge_to_client` (SQLAlchemy `Session` не thread-safe). После коммита из потока — `db.expire(shared_item)` в основном loop, чтобы `_next_unanswered(sess)` увидел свежий `verdict`.
+  - **Семафор evaluate**: модульный `_EVAL_SEMAPHORE = asyncio.Semaphore(8)`, оборачивает `asyncio.to_thread(_run_evaluation_sync, ...)`. Защита от burst-нагрузки на gpt-4o-mini при пиках.
+  - **Счётчик активных realtime-сессий**: `_active_realtime_sessions` инкрементится/декрементится в тонкой обёртке `_run_realtime` (тело вынесено в `_run_realtime_impl`). Лог `realtime: session started/ended session_id=X active=N` для live-наблюдения нагрузки.
+  - **Verified**: ручной параллельный тест двух пользователей подтвердил `active=2` без `InvalidRequestError` / `evaluation failed` / `expire after evaluate failed`.
+  - **Out-of-scope**: multi-worker uvicorn + sticky routing + Redis для распределённого state (нужно при 30+ сессий) — отдельный прод-эпик; jitter в reconnect-backoff фронта (`useVoiceSession.ts:72`) — критично только при N≫10.
 - [x] **P1** **Полноценное редактирование пользователей в `/admin/users`** — раньше inline можно было сменить только роль и активность; email/ФИО/пароль задавались только при создании. Что появилось:
   - **Backend**: `AdminUserPatch.email: EmailStr | None` (`backend/app/schemas.py`), в `update_user` (`backend/app/routers/admin.py`) — проверка уникальности нового email с 409 «Email уже используется». Гарды на самозаблок (нельзя снять себе admin / деактивировать / удалить себя) сохранены. Миграция БД не требуется.
   - **Frontend**: в `AdminUsers.tsx` появилась кнопка `Icon name="edit"` рядом с trash; клик раскрывает аккордеон-форму под строкой с полями `Email / ФИО / Новый пароль` (плейсхолдер «оставьте пустым, чтобы не менять»). Сабмит шлёт частичный PATCH (только изменённые поля), пустой пароль не отправляется. Локальный inline-error пишется из `detail` ответа — при 409 аккордеон не закрывается. Добавлен тип `UserPatch` в `frontend/src/api/types.ts`.

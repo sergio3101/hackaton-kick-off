@@ -67,6 +67,17 @@ class AssignmentCreate(BaseModel):
     llm_model: str | None = Field(default=None, max_length=64)
 
 
+class AssignmentStartIn(BaseModel):
+    """Опциональный override параметров на стороне кандидата при /start.
+
+    Сейчас разрешаем только смену режима (голос ↔ текст). Дефолт — поле из
+    Assignment, выставленное админом. Полезно если у кандидата нет
+    микрофона / OpenAI Realtime недоступен в его регионе.
+    """
+
+    mode: Literal["voice", "text"] | None = None
+
+
 class AssignmentPatch(BaseModel):
     """Частичное обновление назначения. Можно править в любой момент: правки
     подтянутся только в следующих новых попытках (старые InterviewSession

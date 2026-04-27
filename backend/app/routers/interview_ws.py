@@ -78,6 +78,14 @@ from app.models import (
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+# Лимитер на параллельные evaluate-вызовы (sync `gpt-4o-mini` через
+# `asyncio.to_thread`). На демо 5–10 одновременных голосовых сессий запас
+# 8 одновременных оценок покрывает пик и страхует от rate-limit OpenAI.
+_EVAL_SEMAPHORE = asyncio.Semaphore(8)
+
+# Счётчик активных realtime-сессий — для live-наблюдения нагрузки в логах.
+_active_realtime_sessions = 0
+
 
 def _voice_items(sess: InterviewSession) -> list[SessionQuestion]:
     return [i for i in sess.items if i.type == QuestionType.voice]
@@ -617,6 +625,23 @@ async def _run_realtime(websocket: WebSocket, sess: InterviewSession, db: Sessio
     ответа кандидата, мы запускаем evaluate_voice_answer (gpt-4o-mini)
     в фоне и пушим evaluation клиенту, не блокируя голосовой поток.
     """
+    global _active_realtime_sessions
+    _active_realtime_sessions += 1
+    logger.info(
+        "realtime: session started session_id=%d active=%d",
+        sess.id, _active_realtime_sessions,
+    )
+    try:
+        await _run_realtime_impl(websocket, sess, db)
+    finally:
+        _active_realtime_sessions -= 1
+        logger.info(
+            "realtime: session ended session_id=%d active=%d",
+            sess.id, _active_realtime_sessions,
+        )
+
+
+async def _run_realtime_impl(websocket: WebSocket, sess: InterviewSession, db: Session) -> None:
     sess_voice = sess.voice or get_settings().openai_tts_voice
 
     # Снимок вопросов для system-prompt — модель должна знать заранее весь
@@ -707,74 +732,84 @@ async def _run_realtime(websocket: WebSocket, sess: InterviewSession, db: Sessio
         """Блокирующий вызов evaluate + запись в БД.
 
         Запускаем через `asyncio.to_thread` — openai SDK у нас синхронный.
+        Чтобы не делить SQLAlchemy `Session` с event-loop корутинами
+        (`client_to_bridge` / `bridge_to_client`), открываем внутри потока
+        собственную `SessionLocal()` и закрываем её в `finally`.
         Возвращаем компактный payload: и для tool_output Realtime, и для
         WS-сообщения evaluation клиенту.
         """
-        item = db.get(SessionQuestion, item_id)
-        if item is None:
-            return {"error": "question_not_found"}
+        local_db = SessionLocal()
+        try:
+            item = local_db.get(SessionQuestion, item_id)
+            if item is None:
+                return {"error": "question_not_found"}
+            local_sess = local_db.get(InterviewSession, sess.id)
+            if local_sess is None:
+                return {"error": "session_not_found"}
 
-        question_for_eval = current_pending or item.prompt_text
-        criteria = item.criteria if not current_pending else (
-            item.criteria
-            + "\n(уточняющий follow-up: оцени ответ относительно дополнения к исходному вопросу)"
-        )
-        evaluation = evaluate_voice_answer(
-            summary=sess.requirements.summary if sess.requirements else "",
-            question=question_for_eval,
-            criteria=criteria,
-            answer_text=transcript,
-            session_id=sess.id,
-            voice_signals=None,
-            db=db,
-            model=sess.llm_model,
-        )
+            question_for_eval = current_pending or item.prompt_text
+            criteria = item.criteria if not current_pending else (
+                item.criteria
+                + "\n(уточняющий follow-up: оцени ответ относительно дополнения к исходному вопросу)"
+            )
+            evaluation = evaluate_voice_answer(
+                summary=local_sess.requirements.summary if local_sess.requirements else "",
+                question=question_for_eval,
+                criteria=criteria,
+                answer_text=transcript,
+                session_id=local_sess.id,
+                voice_signals=None,
+                db=local_db,
+                model=local_sess.llm_model,
+            )
 
-        if current_pending:
-            item.answer_text = (item.answer_text + "\n\n[follow-up] " + transcript).strip()
-            item.rationale = (item.rationale + "\n\n[follow-up] " + evaluation.rationale).strip()
-            if evaluation.explanation:
-                item.explanation = (
-                    item.explanation + "\n\n[follow-up] " + evaluation.explanation
-                ).strip()
-            if evaluation.verdict == Verdict.correct.value and item.verdict == Verdict.partial:
-                item.verdict = Verdict.correct
-            elif evaluation.verdict == Verdict.incorrect.value and item.verdict != Verdict.correct:
-                item.verdict = Verdict.incorrect
-        else:
-            item.answer_text = transcript
-            item.rationale = evaluation.rationale
-            item.expected_answer = evaluation.expected_answer
-            item.explanation = evaluation.explanation
-            try:
-                item.verdict = Verdict(evaluation.verdict)
-            except ValueError:
-                item.verdict = Verdict.incorrect
-        db.commit()
-        db.refresh(item)
+            if current_pending:
+                item.answer_text = (item.answer_text + "\n\n[follow-up] " + transcript).strip()
+                item.rationale = (item.rationale + "\n\n[follow-up] " + evaluation.rationale).strip()
+                if evaluation.explanation:
+                    item.explanation = (
+                        item.explanation + "\n\n[follow-up] " + evaluation.explanation
+                    ).strip()
+                if evaluation.verdict == Verdict.correct.value and item.verdict == Verdict.partial:
+                    item.verdict = Verdict.correct
+                elif evaluation.verdict == Verdict.incorrect.value and item.verdict != Verdict.correct:
+                    item.verdict = Verdict.incorrect
+            else:
+                item.answer_text = transcript
+                item.rationale = evaluation.rationale
+                item.expected_answer = evaluation.expected_answer
+                item.explanation = evaluation.explanation
+                try:
+                    item.verdict = Verdict(evaluation.verdict)
+                except ValueError:
+                    item.verdict = Verdict.incorrect
+            local_db.commit()
+            local_db.refresh(item)
 
-        # follow-up разрешаем только на основной ответ и не на incorrect —
-        # та же эвристика, что в легаси.
-        allow_followup = (
-            not current_pending
-            and bool(evaluation.follow_up_question)
-            and item.verdict != Verdict.incorrect
-        )
-        new_follow_up = evaluation.follow_up_question if allow_followup else None
-        next_item = next(
-            (q for q in _voice_items(sess) if q.verdict is None),
-            None,
-        )
+            # follow-up разрешаем только на основной ответ и не на incorrect —
+            # та же эвристика, что в легаси.
+            allow_followup = (
+                not current_pending
+                and bool(evaluation.follow_up_question)
+                and item.verdict != Verdict.incorrect
+            )
+            new_follow_up = evaluation.follow_up_question if allow_followup else None
+            next_item = next(
+                (q for q in _voice_items(local_sess) if q.verdict is None),
+                None,
+            )
 
-        return {
-            "item_id": item.id,
-            "verdict": (item.verdict or Verdict.skipped).value,
-            "rationale": item.rationale,
-            "expected_answer": item.expected_answer,
-            "explanation": item.explanation,
-            "follow_up_question": new_follow_up,
-            "next_question_id": next_item.id if next_item else None,
-        }
+            return {
+                "item_id": item.id,
+                "verdict": (item.verdict or Verdict.skipped).value,
+                "rationale": item.rationale,
+                "expected_answer": item.expected_answer,
+                "explanation": item.explanation,
+                "follow_up_question": new_follow_up,
+                "next_question_id": next_item.id if next_item else None,
+            }
+        finally:
+            local_db.close()
 
     async with RealtimeBridge(session_config=session_config) as bridge:
         # Сразу зачитываем первый вопрос — Realtime после session.update сам
@@ -974,12 +1009,13 @@ async def _run_realtime(websocket: WebSocket, sess: InterviewSession, db: Sessio
                             logger.debug("realtime: send transcript failed", exc_info=True)
 
                         try:
-                            payload = await asyncio.to_thread(
-                                _run_evaluation_sync,
-                                question_id,
-                                transcript,
-                                current_pending,
-                            )
+                            async with _EVAL_SEMAPHORE:
+                                payload = await asyncio.to_thread(
+                                    _run_evaluation_sync,
+                                    question_id,
+                                    transcript,
+                                    current_pending,
+                                )
                         except Exception:
                             logger.exception(
                                 "realtime: evaluation failed for question_id=%s",
@@ -1005,6 +1041,20 @@ async def _run_realtime(websocket: WebSocket, sess: InterviewSession, db: Sessio
                                 call_id=call_id, output=payload,
                             )
                             continue
+
+                        # Evaluate-поток коммитил в собственной SessionLocal,
+                        # поэтому копия item в shared `db` всё ещё хранит
+                        # старое (verdict=None). Инвалидируем её, чтобы
+                        # последующий `_next_unanswered(sess)` сделал SELECT
+                        # и увидел свежий verdict.
+                        try:
+                            shared_item = db.get(SessionQuestion, payload["item_id"])
+                            if shared_item is not None:
+                                db.expire(shared_item)
+                        except Exception:
+                            logger.debug(
+                                "realtime: expire after evaluate failed", exc_info=True
+                            )
 
                         # 1) сообщаем клиенту evaluation
                         try:
