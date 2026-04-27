@@ -53,9 +53,12 @@ from typing import Any
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 from sqlalchemy.orm import Session
 
+from openai import OpenAIError
+
 from app.auth import decode_token, decode_ws_ticket
 from app.config import get_settings
 from app.db import SessionLocal
+from app.llm.client import format_openai_error
 from app.llm.cost_tracker import record_realtime_usage
 from app.llm.evaluate import evaluate_voice_answer
 from app.llm.realtime import (
@@ -190,6 +193,22 @@ async def interview_ws(websocket: WebSocket, session_id: int) -> None:
                 await _run_realtime(websocket, sess, db)
             except WebSocketDisconnect:
                 pass
+            except OpenAIError as exc:
+                # 403 (регион/ключ), 401, 429 и пр. — отдаём понятный текст,
+                # чтобы пользователь понял что чинить (VPN/прокси/ключ/квоту).
+                detail = format_openai_error(exc)
+                logger.warning(
+                    "realtime: openai error, session_id=%d — %s", sess.id, detail
+                )
+                try:
+                    await websocket.send_json({
+                        "type": "error",
+                        "code": "openai_unavailable",
+                        "message": detail,
+                        "recoverable": False,
+                    })
+                except Exception:
+                    pass
             except Exception:
                 logger.exception("realtime: unexpected error, session_id=%d", sess.id)
                 try:

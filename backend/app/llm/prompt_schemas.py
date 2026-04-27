@@ -159,8 +159,13 @@ SUMMARY_JSON_SCHEMA = {
         "additionalProperties": False,
         "properties": {
             "overall": {"type": "string"},
+            "final_verdict": {
+                "type": "string",
+                "enum": ["ready", "almost", "needs_practice", "not_ready"],
+            },
+            "final_recommendation": {"type": "string"},
         },
-        "required": ["overall"],
+        "required": ["overall", "final_verdict", "final_recommendation"],
     },
     "strict": True,
 }
