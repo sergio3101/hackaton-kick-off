@@ -1,9 +1,12 @@
 import logging
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from openai import OpenAIError
 
 from app.config import get_settings
+from app.llm.client import format_openai_error
 from app.logging_setup import setup_logging
 from app.routers import admin, analytics, auth, interview_ws, me, requirements, sessions
 
@@ -20,6 +23,19 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(OpenAIError)
+async def handle_openai_error(_: Request, exc: OpenAIError) -> JSONResponse:
+    """Превращаем любую OpenAI-ошибку в 502 с понятным русским сообщением,
+    чтобы фронт мог показать её в UI вместо `500 Internal Server Error`.
+
+    Кодом 502 говорим: «бэк жив, но downstream-сервис (OpenAI) подвёл».
+    """
+    detail = format_openai_error(exc)
+    logger.warning("openai_error: %s — %s", exc.__class__.__name__, detail)
+    return JSONResponse(status_code=502, content={"detail": detail})
+
 
 app.include_router(auth.router)
 app.include_router(requirements.router)

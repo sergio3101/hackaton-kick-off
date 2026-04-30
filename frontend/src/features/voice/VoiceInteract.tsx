@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 
 import Icon from "../../components/Icon";
 import { Orb, Wave } from "../../components/UI";
+import LiveTranscript from "./LiveTranscript";
+import MicLevelMeter from "./MicLevelMeter";
 import type { useVoiceSession } from "./useVoiceSession";
 
 export type VoiceSession = ReturnType<typeof useVoiceSession>;
@@ -301,8 +303,55 @@ export default function VoiceInteract({
         </div>
       )}
 
-      {/* Mic controls */}
-      {!frozen && v.phase !== "done" && !forceTextMode && (
+      {/* Realtime: live-транскрипт прямо под вопросом */}
+      {v.isRealtime && !forceTextMode && !frozen && v.phase !== "done" && (
+        <LiveTranscript
+          text={v.partialTranscript}
+          active={v.vadState === "speech"}
+        />
+      )}
+
+      {/* Realtime: компактная панель — индикатор микрофона + barge-in.
+          Записи/отправки/skip/next нет — управляет Realtime-модель. */}
+      {v.isRealtime && !forceTextMode && !frozen && v.phase !== "done" && (
+        <div
+          style={{
+            padding: "12px 18px",
+            borderBottom: "1px solid var(--bg-line)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            flexShrink: 0,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <MicLevelMeter
+              level={v.micLevel}
+              active={v.vadState === "speech" || v.recording}
+            />
+            <span style={{ fontSize: 11, color: "var(--ink-3)" }}>
+              {v.phase === "speaking"
+                ? "Можно перебить — начните говорить"
+                : v.vadState === "speech"
+                  ? "Слышу вас..."
+                  : "Говорите, когда готовы"}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={v.interrupt}
+            disabled={!(v.phase === "speaking" || v.playing)}
+            className="btn btn--sm"
+            title="Прервать AI и начать ответ"
+          >
+            <Icon name="mic" size={11} /> Прервать
+          </button>
+        </div>
+      )}
+
+      {/* Legacy mic controls — только не в realtime-режиме. */}
+      {!v.isRealtime && !frozen && v.phase !== "done" && !forceTextMode && (
         <div
           style={{
             padding: "12px 18px",

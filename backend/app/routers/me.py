@@ -24,7 +24,14 @@ from app.models import (
     SessionStatus,
     User,
 )
-from app.schemas import AssignmentDetailOut, SessionDetailOut, SessionItemOut, SessionOut
+from app.schemas import (
+    AssignmentDetailOut,
+    AssignmentSessionInfo,
+    AssignmentStartIn,
+    SessionDetailOut,
+    SessionItemOut,
+    SessionOut,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/me", tags=["me"])
@@ -50,16 +57,25 @@ def my_assignments(
 @router.post("/assignments/{assignment_id}/start", response_model=SessionDetailOut)
 def start_assignment(
     assignment_id: int,
+    payload: AssignmentStartIn | None = None,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> SessionDetailOut:
     a = db.get(Assignment, assignment_id)
     if a is None or a.user_id != user.id:
         raise HTTPException(status_code=404, detail="Assignment not found")
-    if a.status not in (AssignmentStatus.assigned, AssignmentStatus.started):
-        raise HTTPException(status_code=400, detail="Назначение уже завершено или опубликовано")
-    if a.session is not None:
-        return _to_detail(a.session)
+
+    # Тренажёр: кандидат может перепройти кикофф сколько угодно раз. Если есть
+    # незавершённая попытка — возвращаем её (продолжить). Если все прежние
+    # попытки finished — создаём НОВУЮ сессию, старые остаются в истории.
+    last = max(a.sessions, key=lambda s: s.created_at, default=None)
+    if last is not None and last.status in (SessionStatus.draft, SessionStatus.active):
+        return _to_detail(last)
+
+    # Кандидат может переопределить режим (voice ↔ text) перед стартом —
+    # например, если у него нет микрофона или Realtime недоступен. По умолчанию
+    # используется режим из Assignment.
+    mode = (payload.mode if payload and payload.mode else None) or a.mode
 
     req = db.get(Requirements, a.requirements_id)
     if req is None:
@@ -96,7 +112,7 @@ def start_assignment(
         status=SessionStatus.draft,
         coding_task_prompt="",
         coding_task_language="python",
-        mode=a.mode,
+        mode=mode,
         target_duration_min=a.target_duration_min,
         assignment_id=a.id,
         # Per-assignment настройки голоса/модели прокидываем в сессию,
@@ -108,6 +124,10 @@ def start_assignment(
     db.add(sess)
     db.flush()
 
+    # Кодинг-задачи генерируются через LLM (OpenAI). Если OpenAI откажет
+    # (403 региона, 401 ключ, 429 квота, сетевая ошибка) — глобальный
+    # exception handler в app.main преобразует её в 502 с понятным русским
+    # detail. Транзакция БД откатится автоматически в get_db (нет commit'а).
     coding_topics = _pick_coding_topics(a.selected_topics or [], CODING_TASKS_PER_SESSION)
     task_set = generate_coding_tasks(
         summary=req.summary,
@@ -219,9 +239,47 @@ def _to_detail(sess: InterviewSession) -> SessionDetailOut:
     )
 
 
+def _session_info(s: InterviewSession) -> AssignmentSessionInfo:
+    """Свернуть сессию в срез для списка попыток (без cost — не показываем у user'а)."""
+    duration_sec: int | None = None
+    if s.started_at and s.finished_at:
+        duration_sec = max(0, int((s.finished_at - s.started_at).total_seconds()))
+
+    score_pct: float | None = None
+    correct = partial = incorrect = skipped = 0
+    if s.summary is not None:
+        correct = s.summary.correct
+        partial = s.summary.partial
+        incorrect = s.summary.incorrect
+        skipped = s.summary.skipped
+        total = correct + partial + incorrect + skipped
+        if total > 0:
+            score_pct = round((correct + 0.5 * partial) / total * 100.0, 1)
+
+    final_verdict = (s.summary.final_verdict if s.summary else "") or ""
+
+    return AssignmentSessionInfo(
+        id=s.id,
+        status=s.status,
+        started_at=s.started_at,
+        finished_at=s.finished_at,
+        duration_sec=duration_sec,
+        score_pct=score_pct,
+        total_cost_usd=None,
+        final_verdict=final_verdict,
+        correct=correct,
+        partial=partial,
+        incorrect=incorrect,
+        skipped=skipped,
+    )
+
+
 def _assignment_detail(a: Assignment) -> AssignmentDetailOut:
-    sess_id = a.session.id if a.session else None
-    published_at = a.session.published_at if a.session else None
+    sessions_sorted = sorted(a.sessions, key=lambda s: s.created_at)
+    sessions_info = [_session_info(s) for s in sessions_sorted]
+    last = sessions_info[-1] if sessions_info else None
+    sess_id = last.id if last else None
+
     return AssignmentDetailOut(
         id=a.id,
         admin_id=a.admin_id,
@@ -240,5 +298,8 @@ def _assignment_detail(a: Assignment) -> AssignmentDetailOut:
         user_full_name=(a.user.full_name if a.user else "") or "",
         requirements_title=a.requirements.title if a.requirements else "",
         session_id=sess_id,
-        published_at=published_at,
+        last_session_id=sess_id,
+        attempts_count=len(sessions_info),
+        session=last,
+        sessions=sessions_info,
     )

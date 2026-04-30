@@ -48,7 +48,10 @@ export default function Interview() {
   // Хуки голоса/кодинга поднимаем сюда: оба компонента (Interact + Log /
   // Editor + Results) делят одно состояние, и переключение табов через CSS
   // display не размонтирует панели — WebSocket / Monaco остаются живыми.
-  const v = useVoiceSession(sessionId);
+  // Realtime — только для voice-сессий; text идёт через legacy-протокол.
+  const v = useVoiceSession(sessionId, {
+    mode: data?.mode === "text" ? "text" : "voice",
+  });
   const coding = useCodingState(data);
 
   // Гидратируем лог голоса из ранее сохранённых ответов (resume).
@@ -145,6 +148,9 @@ export default function Interview() {
   function onFinish() {
     if (!confirm("Завершить интервью и сформировать отчёт?")) return;
     setFinishError(null);
+    // Сразу глушим голос/микрофон/WS — иначе Realtime ещё несколько секунд
+    // доигрывает текущий вопрос, пока бэкенд формирует отчёт.
+    v.finish();
     finishMutation.mutate();
   }
 

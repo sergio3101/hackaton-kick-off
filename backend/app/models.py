@@ -148,7 +148,7 @@ class InterviewSession(Base):
     user: Mapped[User] = relationship(back_populates="sessions")
     requirements: Mapped[Requirements] = relationship(back_populates="sessions")
     assignment: Mapped[Assignment | None] = relationship(
-        back_populates="session", foreign_keys=[assignment_id]
+        back_populates="sessions", foreign_keys=[assignment_id]
     )
     items: Mapped[list[SessionQuestion]] = relationship(
         back_populates="session", cascade="all, delete-orphan", order_by="SessionQuestion.idx"
@@ -195,6 +195,15 @@ class SessionSummary(Base):
     incorrect: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     skipped: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     overall: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # Итоговая оценка от LLM. final_verdict — категория готовности
+    # ("ready"|"almost"|"needs_practice"|"not_ready"), пустая строка для
+    # старых сессий до миграции 0010 либо если LLM вернула значение вне enum'а.
+    final_verdict: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="", server_default=""
+    )
+    final_recommendation: Mapped[str] = mapped_column(
+        Text, nullable=False, default="", server_default=""
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, server_default=func.now())
 
     session: Mapped[InterviewSession] = relationship(back_populates="summary")
@@ -239,10 +248,13 @@ class Assignment(Base):
     user: Mapped[User] = relationship("User", foreign_keys=[user_id])
     admin: Mapped[User | None] = relationship("User", foreign_keys=[admin_id])
     requirements: Mapped[Requirements] = relationship("Requirements")
-    session: Mapped[InterviewSession | None] = relationship(
+    # Все попытки прохождения (1-ко-многим). Кандидат может перепройти — каждая
+    # попытка живёт в собственной сессии. Сортировка по created_at, чтобы
+    # последняя попытка всегда была sessions[-1].
+    sessions: Mapped[list[InterviewSession]] = relationship(
         back_populates="assignment",
-        uselist=False,
         foreign_keys="InterviewSession.assignment_id",
+        order_by="InterviewSession.created_at",
     )
 
 

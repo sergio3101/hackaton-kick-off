@@ -113,10 +113,7 @@ def list_sessions(
     if requirements_id is not None:
         q = q.filter(InterviewSession.requirements_id == requirements_id)
     rows = q.order_by(InterviewSession.created_at.desc()).all()
-    # Обычный user видит только опубликованные отчёты завершённых сессий.
-    if not is_admin(user):
-        rows = [r for r in rows if r.published_at is not None or r.status != SessionStatus.finished]
-    return [SessionOut.model_validate(r) for r in rows]
+    return [SessionOut.from_session(r) for r in rows]
 
 
 @router.post("", response_model=SessionDetailOut, status_code=status.HTTP_201_CREATED)
@@ -277,7 +274,7 @@ def start_session(
         db.commit()
         db.refresh(sess)
         logger.info("start_session: session_id=%d", sess.id)
-    return SessionOut.model_validate(sess)
+    return SessionOut.from_session(sess)
 
 
 @router.post("/{session_id}/coding/run/{item_id}", response_model=CodingRunOut)
@@ -398,16 +395,20 @@ def finish_session(
         )
 
     overall = ""
+    final_verdict = ""
+    final_recommendation = ""
     if lines:
         try:
-            overall = make_overall_summary(
+            result = make_overall_summary(
                 "\n\n".join(lines), session_id=sess.id, db=db, model=sess.llm_model,
             )
+            overall = result.overall
+            final_verdict = result.final_verdict
+            final_recommendation = result.final_recommendation
         except Exception:
-            # LLM-ошибка не должна блокировать завершение сессии — ставим пустой
-            # overall и продолжаем; админ при ревью может перегенерировать.
+            # LLM-ошибка не должна блокировать завершение сессии — ставим пустые
+            # поля и продолжаем; вердикт просто не отрисуется в отчёте.
             logger.exception("finish_session: make_overall_summary failed for session_id=%d", sess.id)
-            overall = ""
 
     summary = sess.summary
     if summary is None:
@@ -418,10 +419,12 @@ def finish_session(
     summary.incorrect = counts[Verdict.incorrect]
     summary.skipped = counts[Verdict.skipped]
     summary.overall = overall
+    summary.final_verdict = final_verdict
+    summary.final_recommendation = final_recommendation
 
     sess.status = SessionStatus.finished
     sess.finished_at = datetime.now(timezone.utc)
-    if sess.assignment is not None and sess.assignment.status != AssignmentStatus.published:
+    if sess.assignment is not None:
         sess.assignment.status = AssignmentStatus.completed
     db.commit()
     db.refresh(sess)
@@ -432,10 +435,11 @@ def finish_session(
     )
 
     return ReportOut(
-        session=SessionOut.model_validate(sess),
+        session=SessionOut.from_session(sess),
         summary=SummaryOut.model_validate(summary),
         items=[SessionItemOut.model_validate(i) for i in sess.items],
         total_cost_usd=_session_cost_usd(db, sess.id),
+        requirements_title=sess.requirements.title if sess.requirements else "",
     )
 
 
@@ -448,16 +452,14 @@ def get_report(
     sess = db.get(InterviewSession, session_id)
     if sess is None:
         raise HTTPException(status_code=404, detail="Session not found")
-    if not is_admin(user):
-        if sess.user_id != user.id:
-            raise HTTPException(status_code=404, detail="Session not found")
-        if sess.status == SessionStatus.finished and sess.published_at is None:
-            raise HTTPException(status_code=403, detail="Отчёт ещё не опубликован администратором")
+    if not is_admin(user) and sess.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Session not found")
     return ReportOut(
-        session=SessionOut.model_validate(sess),
+        session=SessionOut.from_session(sess),
         summary=SummaryOut.model_validate(sess.summary) if sess.summary else None,
         items=[SessionItemOut.model_validate(i) for i in sess.items],
         total_cost_usd=_session_cost_usd(db, sess.id),
+        requirements_title=sess.requirements.title if sess.requirements else "",
     )
 
 
@@ -479,18 +481,13 @@ def get_report_pdf(
     sess = db.get(InterviewSession, session_id)
     if sess is None:
         raise HTTPException(status_code=404, detail="Session not found")
-    if not is_admin(user):
-        if sess.user_id != user.id:
-            raise HTTPException(status_code=404, detail="Session not found")
-        if sess.status == SessionStatus.finished and sess.published_at is None:
-            raise HTTPException(status_code=403, detail="Отчёт ещё не опубликован администратором")
+    if not is_admin(user) and sess.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Session not found")
 
     from app.reports.pdf import render_session_pdf
 
-    cost = _session_cost_usd(db, sess.id)
     pdf_bytes = render_session_pdf(
         sess,
-        total_cost_usd=cost,
         show_paste_signal=is_admin(user),
     )
     filename = f"interview-{sess.id}.pdf"
