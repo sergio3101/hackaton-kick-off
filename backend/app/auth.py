@@ -52,6 +52,37 @@ def decode_token(token: str) -> int:
         ) from exc
 
 
+# WS-тикет — короткоживущий одноразовый токен для подключения к WebSocket.
+# JWT в URL-параметре access-токена (?token=...) светится в логах nginx, в
+# Referer и в DevTools. Тикет живёт ~2 минуты — ровно столько, сколько нужно
+# на handshake; даже если он попадёт в логи, сделать с ним ничего нельзя.
+WS_TICKET_TTL_SECONDS = 120
+
+
+def create_ws_ticket(user_id: int, session_id: int) -> str:
+    expire = datetime.now(timezone.utc) + timedelta(seconds=WS_TICKET_TTL_SECONDS)
+    payload = {"sub": str(user_id), "wss": session_id, "exp": expire, "kind": "ws"}
+    return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+
+
+def decode_ws_ticket(ticket: str) -> tuple[int, int]:
+    """Возвращает (user_id, session_id). Бросает HTTPException 401 если невалиден."""
+    try:
+        payload = jwt.decode(ticket, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+        if payload.get("kind") != "ws":
+            raise JWTError("not a ws ticket")
+        sub = payload.get("sub")
+        wss = payload.get("wss")
+        if sub is None or wss is None:
+            raise JWTError("missing claims")
+        return int(sub), int(wss)
+    except (JWTError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired WS ticket",
+        ) from exc
+
+
 def get_current_user(
     token: str | None = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
@@ -66,4 +97,20 @@ def get_current_user(
     user = db.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+    if not user.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is disabled")
     return user
+
+
+def require_admin(user: User = Depends(get_current_user)) -> User:
+    from app.models import UserRole
+
+    if user.role != UserRole.admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin role required")
+    return user
+
+
+def is_admin(user: User) -> bool:
+    from app.models import UserRole
+
+    return user.role == UserRole.admin

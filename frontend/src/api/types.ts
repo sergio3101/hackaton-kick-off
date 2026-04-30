@@ -3,10 +3,132 @@ export type SessionStatus = "draft" | "active" | "finished";
 export type QuestionType = "voice" | "coding";
 export type Verdict = "correct" | "partial" | "incorrect" | "skipped";
 
+export const VERDICT_LABEL_RU: Record<Verdict, string> = {
+  correct: "Верно",
+  partial: "Частично",
+  incorrect: "Неверно",
+  skipped: "Пропущено",
+};
+
+export function verdictLabel(v: string | null | undefined): string {
+  if (!v) return "";
+  return VERDICT_LABEL_RU[v as Verdict] ?? v;
+}
+export type UserRole = "admin" | "user";
+// "published" deprecated после удаления механики публикации (апрель 2026):
+// в БД остаётся для legacy-записей, но сервер больше не выставляет этот статус.
+export type AssignmentStatus = "assigned" | "started" | "completed" | "published";
+
+// Категория готовности кандидата по итогам интервью. Заполняет LLM в
+// SessionSummary.final_verdict; пустая строка — нет вердикта (старая сессия
+// до миграции 0010 либо LLM не вернула значение).
+export type FinalVerdict = "ready" | "almost" | "needs_practice" | "not_ready";
+
+export const FINAL_VERDICT_LABEL_RU: Record<FinalVerdict, string> = {
+  ready: "Готов",
+  almost: "Почти готов",
+  needs_practice: "Нужна практика",
+  not_ready: "Не готов",
+};
+
+export const FINAL_VERDICT_PILL: Record<FinalVerdict, string> = {
+  ready: "pill--accent",
+  almost: "pill--info",
+  needs_practice: "pill--warn",
+  not_ready: "pill--danger",
+};
+
 export interface User {
   id: number;
   email: string;
+  full_name?: string;
+  role: UserRole;
+  is_active?: boolean;
   created_at: string;
+}
+
+export interface UserPatch {
+  email?: string;
+  full_name?: string;
+  password?: string;
+  role?: UserRole;
+  is_active?: boolean;
+}
+
+export interface AssignmentOut {
+  id: number;
+  admin_id: number | null;
+  user_id: number;
+  requirements_id: number;
+  selected_topics: string[];
+  selected_level: Level;
+  mode: "voice" | "text";
+  target_duration_min: number;
+  status: AssignmentStatus;
+  note: string;
+  voice?: string | null;
+  llm_model?: string | null;
+  created_at: string;
+}
+
+// Голоса OpenAI Realtime API (актуальный список — не совпадает с TTS-1).
+// Старые имена ('onyx'/'fable'/'nova') не поддерживаются — для уже
+// сохранённых assignment'ов backend упадёт на дефолтный 'alloy'.
+export const TTS_VOICES = [
+  "alloy",
+  "ash",
+  "ballad",
+  "coral",
+  "echo",
+  "sage",
+  "shimmer",
+  "verse",
+  "marin",
+  "cedar",
+] as const;
+export type TtsVoice = (typeof TTS_VOICES)[number];
+
+export const LLM_MODELS = [
+  "gpt-4o-mini",
+  "gpt-4o",
+  "gpt-4.1-mini",
+  "gpt-4.1",
+] as const;
+export type LlmModel = (typeof LLM_MODELS)[number];
+
+export interface AssignmentSessionInfo {
+  id: number;
+  status: SessionStatus;
+  started_at: string | null;
+  finished_at: string | null;
+  duration_sec: number | null;
+  score_pct: number | null;
+  total_cost_usd: number | null;
+  // Категория готовности по итогам сессии (см. SessionSummary.final_verdict).
+  // Пусто, если LLM не выдала вердикт или сессия незавершена.
+  final_verdict?: "" | FinalVerdict;
+  // Breakdown ответов из SessionSummary — для отображения «✓7 ~2 ✗1 –0».
+  // Все четыре нуля для незавершённых сессий.
+  correct?: number;
+  partial?: number;
+  incorrect?: number;
+  skipped?: number;
+}
+
+export interface AssignmentDetailOut extends AssignmentOut {
+  user_email: string;
+  user_full_name: string;
+  requirements_title: string;
+  // Legacy alias of last_session_id (старые клиенты).
+  session_id: number | null;
+  last_session_id: number | null;
+  attempts_count: number;
+  // Срез последней (по created_at) попытки — back-compat алиас sessions[-1].
+  session: AssignmentSessionInfo | null;
+  // Все попытки прохождения, отсортированные по возрастанию created_at.
+  sessions: AssignmentSessionInfo[];
+  // deprecated: публикация отчётов админом удалена; сервер всегда отдаёт null.
+  published_at?: string | null;
 }
 
 export interface TokenOut {
@@ -48,19 +170,41 @@ export interface SessionItem {
   answer_text: string;
   verdict: Verdict | null;
   rationale: string;
+  expected_answer: string;
+  explanation: string;
+  paste_chars?: number;
+  coding_language?: string | null;
 }
+
+export type SessionMode = "voice" | "text";
 
 export interface SessionOut {
   id: number;
+  user_id?: number;
+  user_email?: string;
+  user_full_name?: string;
   requirements_id: number;
+  requirements_title?: string;
   selected_topics: string[];
   selected_level: Level;
   status: SessionStatus;
   coding_task_prompt: string;
   coding_task_language: string;
+  target_duration_min: number;
+  mode: SessionMode;
   started_at: string | null;
   finished_at: string | null;
+  published_at?: string | null;
+  assignment_id?: number | null;
   created_at: string;
+}
+
+export interface RequirementsStatsOut {
+  requirements_id: number;
+  sessions_total: number;
+  sessions_finished: number;
+  avg_score: number;
+  last_session_at: string | null;
 }
 
 export interface SessionDetailOut extends SessionOut {
@@ -73,10 +217,107 @@ export interface SummaryOut {
   incorrect: number;
   skipped: number;
   overall: string;
+  final_verdict: "" | FinalVerdict;
+  final_recommendation: string;
 }
 
 export interface ReportOut {
   session: SessionOut;
   summary: SummaryOut | null;
   items: SessionItem[];
+  total_cost_usd: number;
+  requirements_title: string;
 }
+
+export interface TopicStat {
+  topic: string;
+  answered: number;
+  avg_score: number;
+}
+
+export interface LevelStat {
+  level: Level;
+  sessions: number;
+}
+
+export interface TrendPoint {
+  date: string;
+  sessions: number;
+  avg_score: number;
+}
+
+export interface AnalyticsOverviewOut {
+  total_sessions: number;
+  finished_sessions: number;
+  total_questions_answered: number;
+  overall_avg_score: number;
+  by_level: LevelStat[];
+  by_topic: TopicStat[];
+  weak_topics: TopicStat[];
+  trend_30d: TrendPoint[];
+}
+
+// ─── Voice WebSocket protocol ────────────────────────────────────────────────
+// Дискриминированный union серверных сообщений из interview_ws.py.
+// Держим в одном месте, чтобы дрифт схемы фронт↔бэк ловился TypeScript-ом,
+// а не в рантайме.
+
+export type WsDoneReason = "completed" | "time_up";
+
+export interface WsQuestionMsg {
+  type: "question";
+  item_id: number;
+  idx: number;
+  topic: string;
+  text: string;
+  audio_b64: string;
+  is_follow_up: boolean;
+  intro_text: string | null;
+  intro_audio_b64: string | null;
+}
+
+export interface WsTranscriptMsg {
+  type: "transcript";
+  item_id: number;
+  text: string;
+}
+
+export interface WsEvaluationMsg {
+  type: "evaluation";
+  item_id: number;
+  verdict: Verdict;
+  rationale: string;
+  expected_answer: string;
+  explanation: string;
+}
+
+export interface WsAwaitingNextMsg {
+  type: "awaiting_next";
+  item_id: number;
+}
+
+export interface WsTimeWarningMsg {
+  type: "time_warning";
+  remaining_sec: number;
+}
+
+export interface WsDoneMsg {
+  type: "done";
+  reason: WsDoneReason;
+}
+
+export interface WsErrorMsg {
+  type: "error";
+  code?: string;
+  message?: string;
+  recoverable?: boolean;
+}
+
+export type WsServerMessage =
+  | WsQuestionMsg
+  | WsTranscriptMsg
+  | WsEvaluationMsg
+  | WsAwaitingNextMsg
+  | WsTimeWarningMsg
+  | WsDoneMsg
+  | WsErrorMsg;

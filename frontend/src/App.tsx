@@ -1,12 +1,18 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useParams } from "react-router-dom";
 
 import { useAuth } from "./auth/AuthProvider";
+import ErrorBoundary from "./components/ErrorBoundary";
 import Layout from "./components/Layout";
+import AdminAssignments from "./pages/AdminAssignments";
+import AdminSessionReview from "./pages/AdminSessionReview";
+import AdminUsers from "./pages/AdminUsers";
 import Dashboard from "./pages/Dashboard";
-import History from "./pages/History";
+import Docs from "./pages/Docs";
 import Interview from "./pages/Interview";
 import Login from "./pages/Login";
-import NewSession from "./pages/NewSession";
+import MyAssignments from "./pages/MyAssignments";
+import MyStats from "./pages/MyStats";
+import Projects from "./pages/Projects";
 import Register from "./pages/Register";
 import Report from "./pages/Report";
 import RequirementsDetail from "./pages/RequirementsDetail";
@@ -14,12 +20,52 @@ import Upload from "./pages/Upload";
 
 function Private({ children }: { children: JSX.Element }) {
   const { user, loading } = useAuth();
-  if (loading) return <div className="p-6 text-slate-500">Загрузка...</div>;
+  if (loading)
+    return (
+      <div className="p-6" style={{ color: "var(--ink-3)" }}>
+        Загрузка...
+      </div>
+    );
   if (!user) return <Navigate to="/login" replace />;
   return children;
 }
 
+function AdminOnly({ children }: { children: JSX.Element }) {
+  const { user } = useAuth();
+  if (user?.role !== "admin") return <Navigate to="/" replace />;
+  return children;
+}
+
+function UserOnlyInterview() {
+  const { user } = useAuth();
+  const { id } = useParams();
+  if (user?.role === "admin") {
+    return <Navigate to={`/admin/sessions/${id}`} replace />;
+  }
+  return <Interview />;
+}
+
+// Старая страница /sessions удалена; редирект ведёт в раздел назначений
+// согласно роли: админ — в админский список, пользователь — в свои кикоффы.
+function HistoryRedirect() {
+  const { user } = useAuth();
+  return (
+    <Navigate
+      to={user?.role === "admin" ? "/admin/assignments" : "/me/assignments"}
+      replace
+    />
+  );
+}
+
 export default function App() {
+  return (
+    <ErrorBoundary>
+      <AppRoutes />
+    </ErrorBoundary>
+  );
+}
+
+function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
@@ -32,12 +78,63 @@ export default function App() {
         }
       >
         <Route path="/" element={<Dashboard />} />
-        <Route path="/upload" element={<Upload />} />
-        <Route path="/requirements/:id" element={<RequirementsDetail />} />
-        <Route path="/requirements/:id/new-session" element={<NewSession />} />
-        <Route path="/sessions/:id/interview" element={<Interview />} />
+        <Route
+          path="/projects"
+          element={
+            <AdminOnly>
+              <Projects />
+            </AdminOnly>
+          }
+        />
+        <Route
+          path="/upload"
+          element={
+            <AdminOnly>
+              <Upload />
+            </AdminOnly>
+          }
+        />
+        <Route
+          path="/requirements/:id"
+          element={
+            <AdminOnly>
+              <RequirementsDetail />
+            </AdminOnly>
+          }
+        />
+        <Route path="/sessions/:id/interview" element={<UserOnlyInterview />} />
         <Route path="/sessions/:id/report" element={<Report />} />
-        <Route path="/history" element={<History />} />
+        <Route
+          path="/admin/users"
+          element={
+            <AdminOnly>
+              <AdminUsers />
+            </AdminOnly>
+          }
+        />
+        <Route
+          path="/admin/assignments"
+          element={
+            <AdminOnly>
+              <AdminAssignments />
+            </AdminOnly>
+          }
+        />
+        <Route
+          path="/admin/sessions/:id"
+          element={
+            <AdminOnly>
+              <AdminSessionReview />
+            </AdminOnly>
+          }
+        />
+        <Route path="/me/assignments" element={<MyAssignments />} />
+        <Route path="/me/stats" element={<MyStats />} />
+        <Route path="/docs" element={<Docs />} />
+        {/* Legacy aliases — старые ссылки на /sessions / /history теперь
+           ведут в раздел назначений (история и назначения объединены). */}
+        <Route path="/sessions" element={<HistoryRedirect />} />
+        <Route path="/history" element={<HistoryRedirect />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

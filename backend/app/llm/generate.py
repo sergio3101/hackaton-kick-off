@@ -1,9 +1,11 @@
-import json
 import logging
 from dataclasses import dataclass
 
+from sqlalchemy.orm import Session
+
 from app.config import get_settings
-from app.llm.client import get_openai
+from app.llm.client import get_openai, safe_json_loads
+from app.llm.cost_tracker import record_chat_usage
 from app.llm.prompts import (
     CODING_TASK_JSON_SCHEMA,
     CODING_TASK_SYSTEM,
@@ -32,7 +34,15 @@ class CodingTaskSet:
     tasks: list[CodingTaskItem]
 
 
-def generate_coding_task(summary: str, topics: list[str], level: str) -> CodingTask:
+def generate_coding_task(
+    summary: str,
+    topics: list[str],
+    level: str,
+    *,
+    session_id: int | None = None,
+    requirements_id: int | None = None,
+    db: Session | None = None,
+) -> CodingTask:
     settings = get_settings()
     client = get_openai()
 
@@ -50,14 +60,26 @@ def generate_coding_task(summary: str, topics: list[str], level: str) -> CodingT
         response_format={"type": "json_schema", "json_schema": CODING_TASK_JSON_SCHEMA},
         temperature=0.5,
     )
-    payload = json.loads(response.choices[0].message.content or "{}")
+    record_chat_usage(
+        kind="coding_task", model=settings.openai_chat_model,
+        response=response, session_id=session_id, requirements_id=requirements_id, db=db,
+    )
+    payload = safe_json_loads(response.choices[0].message.content, kind="generate")
     return CodingTask(
         language=payload.get("language", "python"),
         prompt=payload.get("prompt", ""),
     )
 
 
-def generate_coding_tasks(summary: str, topics: list[str], level: str) -> CodingTaskSet:
+def generate_coding_tasks(
+    summary: str,
+    topics: list[str],
+    level: str,
+    *,
+    session_id: int | None = None,
+    requirements_id: int | None = None,
+    db: Session | None = None,
+) -> CodingTaskSet:
     """Сгенерировать набор кодинг-задач — по одной на каждую тему из списка.
 
     `topics` уже разрешён (длина = желаемое число задач, повторы допустимы).
@@ -88,7 +110,11 @@ def generate_coding_tasks(summary: str, topics: list[str], level: str) -> Coding
         response_format={"type": "json_schema", "json_schema": CODING_TASKS_JSON_SCHEMA},
         temperature=0.5,
     )
-    payload = json.loads(response.choices[0].message.content or "{}")
+    record_chat_usage(
+        kind="coding_tasks", model=settings.openai_chat_model,
+        response=response, session_id=session_id, requirements_id=requirements_id, db=db,
+    )
+    payload = safe_json_loads(response.choices[0].message.content, kind="generate")
     raw_tasks = payload.get("tasks", []) or []
     language = payload.get("language", "python") or "python"
 

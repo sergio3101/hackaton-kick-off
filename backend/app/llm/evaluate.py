@@ -1,9 +1,11 @@
-import json
 import logging
 from dataclasses import dataclass
 
+from sqlalchemy.orm import Session
+
 from app.config import get_settings
-from app.llm.client import get_openai
+from app.llm.client import get_openai, safe_json_loads
+from app.llm.cost_tracker import record_chat_usage
 from app.llm.prompts import (
     CODE_REVIEW_JSON_SCHEMA,
     CODE_REVIEW_SYSTEM,
@@ -20,13 +22,28 @@ logger = logging.getLogger(__name__)
 class VoiceEvaluation:
     verdict: str
     rationale: str
+    expected_answer: str
+    explanation: str
     follow_up_question: str | None
+    follow_up_kind: str | None  # "easier" | "deeper" | "clarify" | None
 
 
 @dataclass(slots=True)
 class CodeReview:
     verdict: str
     rationale: str
+    expected_answer: str
+    explanation: str
+
+
+@dataclass(slots=True)
+class OverallSummary:
+    overall: str
+    final_verdict: str  # "" если LLM прислал что-то вне допустимого enum'а
+    final_recommendation: str
+
+
+_FINAL_VERDICT_VALUES = frozenset({"ready", "almost", "needs_practice", "not_ready"})
 
 
 def evaluate_voice_answer(
@@ -35,8 +52,13 @@ def evaluate_voice_answer(
     question: str,
     criteria: str,
     answer_text: str,
+    session_id: int | None = None,
+    voice_signals: str | None = None,
+    db: Session | None = None,
+    model: str | None = None,
 ) -> VoiceEvaluation:
     settings = get_settings()
+    chat_model = model or settings.openai_chat_model
     client = get_openai()
     user = (
         f"Контекст проекта:\n{summary}\n\n"
@@ -44,8 +66,13 @@ def evaluate_voice_answer(
         f"Критерии: {criteria}\n\n"
         f"Расшифрованный ответ кандидата:\n{answer_text}"
     )
+    if voice_signals:
+        user += (
+            f"\n\nГолосовые признаки (эвристика, не для оценки знаний — для общего тона "
+            f"rationale): {voice_signals}"
+        )
     response = client.chat.completions.create(
-        model=settings.openai_chat_model,
+        model=chat_model,
         messages=[
             {"role": "system", "content": VOICE_EVAL_SYSTEM},
             {"role": "user", "content": user},
@@ -53,21 +80,38 @@ def evaluate_voice_answer(
         response_format={"type": "json_schema", "json_schema": VOICE_EVAL_JSON_SCHEMA},
         temperature=0.2,
     )
-    payload = json.loads(response.choices[0].message.content or "{}")
+    record_chat_usage(
+        kind="voice_eval", model=chat_model,
+        response=response, session_id=session_id, db=db,
+    )
+    payload = safe_json_loads(response.choices[0].message.content, kind="evaluate")
     result = VoiceEvaluation(
         verdict=payload.get("verdict", "incorrect"),
         rationale=payload.get("rationale", ""),
+        expected_answer=payload.get("expected_answer", ""),
+        explanation=payload.get("explanation", ""),
         follow_up_question=payload.get("follow_up_question"),
+        follow_up_kind=payload.get("follow_up_kind"),
     )
     logger.info(
-        "evaluate_voice_answer: answer_len=%d, verdict=%s, has_followup=%s",
-        len(answer_text), result.verdict, result.follow_up_question is not None,
+        "evaluate_voice_answer: answer_len=%d, verdict=%s, follow_up=%s, expected_len=%d",
+        len(answer_text), result.verdict, result.follow_up_kind or "none",
+        len(result.expected_answer),
     )
     return result
 
 
-def review_code(*, task_prompt: str, language: str, code: str) -> CodeReview:
+def review_code(
+    *,
+    task_prompt: str,
+    language: str,
+    code: str,
+    session_id: int | None = None,
+    db: Session | None = None,
+    model: str | None = None,
+) -> CodeReview:
     settings = get_settings()
+    chat_model = model or settings.openai_chat_model
     client = get_openai()
     user = (
         f"Язык: {language}\n\n"
@@ -75,7 +119,7 @@ def review_code(*, task_prompt: str, language: str, code: str) -> CodeReview:
         f"Решение кандидата:\n```{language}\n{code}\n```"
     )
     response = client.chat.completions.create(
-        model=settings.openai_chat_model,
+        model=chat_model,
         messages=[
             {"role": "system", "content": CODE_REVIEW_SYSTEM},
             {"role": "user", "content": user},
@@ -83,23 +127,36 @@ def review_code(*, task_prompt: str, language: str, code: str) -> CodeReview:
         response_format={"type": "json_schema", "json_schema": CODE_REVIEW_JSON_SCHEMA},
         temperature=0.2,
     )
-    payload = json.loads(response.choices[0].message.content or "{}")
+    record_chat_usage(
+        kind="code_review", model=chat_model,
+        response=response, session_id=session_id, db=db,
+    )
+    payload = safe_json_loads(response.choices[0].message.content, kind="evaluate")
     result = CodeReview(
         verdict=payload.get("verdict", "incorrect"),
         rationale=payload.get("rationale", ""),
+        expected_answer=payload.get("expected_answer", ""),
+        explanation=payload.get("explanation", ""),
     )
     logger.info(
-        "review_code: language=%s, code_len=%d, verdict=%s",
-        language, len(code), result.verdict,
+        "review_code: language=%s, code_len=%d, verdict=%s, expected_len=%d",
+        language, len(code), result.verdict, len(result.expected_answer),
     )
     return result
 
 
-def make_overall_summary(items_text: str) -> str:
+def make_overall_summary(
+    items_text: str,
+    *,
+    session_id: int | None = None,
+    db: Session | None = None,
+    model: str | None = None,
+) -> OverallSummary:
     settings = get_settings()
+    chat_model = model or settings.openai_chat_model
     client = get_openai()
     response = client.chat.completions.create(
-        model=settings.openai_chat_model,
+        model=chat_model,
         messages=[
             {"role": "system", "content": SUMMARY_SYSTEM},
             {"role": "user", "content": items_text},
@@ -107,5 +164,16 @@ def make_overall_summary(items_text: str) -> str:
         response_format={"type": "json_schema", "json_schema": SUMMARY_JSON_SCHEMA},
         temperature=0.3,
     )
-    payload = json.loads(response.choices[0].message.content or "{}")
-    return payload.get("overall", "")
+    record_chat_usage(
+        kind="overall_summary", model=chat_model,
+        response=response, session_id=session_id, db=db,
+    )
+    payload = safe_json_loads(response.choices[0].message.content, kind="evaluate")
+    verdict = payload.get("final_verdict", "")
+    if verdict not in _FINAL_VERDICT_VALUES:
+        verdict = ""
+    return OverallSummary(
+        overall=payload.get("overall", "") or "",
+        final_verdict=verdict,
+        final_recommendation=payload.get("final_recommendation", "") or "",
+    )

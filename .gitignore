@@ -11,6 +11,8 @@ __pycache__/
 *.egg-info/
 .venv/
 venv/
+ux-run
+.playwright-mcp
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
@@ -22,6 +24,10 @@ build/
 .vite/
 *.log
 npm-debug.log*
+
+# Frontend: tsc emit artifacts (we use Vite for bundling, tsc -b is type-check only)
+frontend/src/**/*.js
+frontend/tsconfig.tsbuildinfo
 
 # IDE
 .idea/workspace.xml
