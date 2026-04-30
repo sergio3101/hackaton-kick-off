@@ -1,15 +1,23 @@
 import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
 import { Link, Navigate } from "react-router-dom";
 
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthProvider";
-import type {
-  AnalyticsOverviewOut,
-  RequirementsOut,
-  SessionOut,
+import {
+  FINAL_VERDICT_LABEL_RU,
+  FINAL_VERDICT_PILL,
+  type AnalyticsOverviewOut,
+  type AssignmentDetailOut,
+  type AssignmentSessionInfo,
+  type FinalVerdict,
+  type RequirementsOut,
+  type SessionOut,
+  type TopicStat,
+  type TrendPoint,
 } from "../api/types";
 import Icon from "../components/Icon";
-import { Kpi, StatusPill, Wave } from "../components/UI";
+import { Kpi, Wave } from "../components/UI";
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -20,9 +28,17 @@ export default function Dashboard() {
     queryFn: async () => (await api.get<RequirementsOut[]>("/api/requirements")).data,
     enabled: isAdmin,
   });
+  // Активная сессия может быть и без assignment (admin создаёт через /api/sessions),
+  // поэтому отдельный запрос /api/sessions для блока «в эфире» сохраняем.
   const sessionsQ = useQuery({
     queryKey: ["sessions"],
     queryFn: async () => (await api.get<SessionOut[]>("/api/sessions")).data,
+    enabled: isAdmin,
+  });
+  const assignmentsQ = useQuery({
+    queryKey: ["admin", "assignments"],
+    queryFn: async () =>
+      (await api.get<AssignmentDetailOut[]>("/api/admin/assignments")).data,
     enabled: isAdmin,
   });
   const analyticsQ = useQuery({
@@ -32,7 +48,30 @@ export default function Dashboard() {
     enabled: isAdmin,
   });
 
-  if (!isAdmin) return <Navigate to="/me/assignments" replace />;
+  // hooks выше Navigate, чтобы не нарушать правила хуков (раннее return после).
+  const finishedReports = useMemo<FinishedReportRow[]>(() => {
+    if (!assignmentsQ.data) return [];
+    const rows: FinishedReportRow[] = [];
+    for (const a of assignmentsQ.data) {
+      for (const s of a.sessions ?? []) {
+        if (s.status !== "finished") continue;
+        rows.push({
+          ...s,
+          requirements_title: a.requirements_title,
+          user_email: a.user_email,
+          user_full_name: a.user_full_name,
+        });
+      }
+    }
+    rows.sort((x, y) => {
+      const tx = x.finished_at ? Date.parse(x.finished_at) : 0;
+      const ty = y.finished_at ? Date.parse(y.finished_at) : 0;
+      return ty - tx;
+    });
+    return rows.slice(0, 12);
+  }, [assignmentsQ.data]);
+
+  if (!isAdmin) return <Navigate to="/me/stats" replace />;
 
   const projects = projectsQ.data ?? [];
   const sessions = (sessionsQ.data ?? [])
@@ -41,9 +80,14 @@ export default function Dashboard() {
       (a, b) =>
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
     );
+  const assignments = (assignmentsQ.data ?? [])
+    .slice()
+    .sort(
+      (a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    );
   const isEmpty = !projectsQ.isLoading && projects.length === 0;
   const activeSession = sessions.find((s) => s.status === "active");
-  const lastFinished = sessions.find((s) => s.status === "finished");
   const overview = analyticsQ.data;
   const activeCount = sessions.filter((s) => s.status === "active").length;
 
@@ -94,7 +138,7 @@ export default function Dashboard() {
             <Icon name="upload" size={14} />
             Загрузить ТЗ
           </Link>
-          <Link to="/admin/assignments" className="btn btn--primary">
+          <Link to="/admin/assignments?new=1" className="btn btn--primary">
             <Icon name="tag" size={14} />
             Назначить kick-off
           </Link>
@@ -219,91 +263,109 @@ export default function Dashboard() {
         </div>
       )}
 
+      {overview && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 18,
+            marginBottom: 18,
+          }}
+        >
+          <div className="card">
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 16,
+              }}
+            >
+              <span style={{ fontWeight: 500 }}>Score по темам</span>
+              <span
+                className="mono"
+                style={{ fontSize: 11, color: "var(--ink-3)" }}
+              >
+                {overview.by_topic.length} тем
+              </span>
+            </div>
+            {overview.by_topic.length === 0 ? (
+              <div style={{ fontSize: 13, color: "var(--ink-3)" }}>Нет данных</div>
+            ) : (
+              <TopicBars topics={overview.by_topic} />
+            )}
+          </div>
+
+          <div className="card">
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 16,
+              }}
+            >
+              <span style={{ fontWeight: 500 }}>Слабые места — что подтянуть</span>
+              {overview.weak_topics.length > 0 && (
+                <span className="pill pill--danger">
+                  {overview.weak_topics.length} тем
+                </span>
+              )}
+            </div>
+            {overview.weak_topics.length === 0 ? (
+              <div style={{ fontSize: 13, color: "var(--ink-3)" }}>
+                Нет проблемных тем — все score ≥ 50%
+              </div>
+            ) : (
+              <TopicBars topics={overview.weak_topics} variant="weak" />
+            )}
+          </div>
+        </div>
+      )}
+
+      {overview && (
+        <div className="card" style={{ marginBottom: 18 }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: 16,
+            }}
+          >
+            <span style={{ fontWeight: 500 }}>Активность за 30 дней</span>
+            <div
+              style={{
+                display: "flex",
+                gap: 14,
+                fontSize: 11,
+                color: "var(--ink-3)",
+                alignItems: "center",
+              }}
+            >
+              <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                <span className="dot" style={{ background: "var(--accent)" }} /> ≥ 70%
+              </span>
+              <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                <span className="dot" style={{ background: "var(--warn)" }} /> 40–70%
+              </span>
+              <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                <span className="dot" style={{ background: "var(--danger)" }} /> &lt; 40%
+              </span>
+            </div>
+          </div>
+          <TrendChart trend={overview.trend_30d} />
+        </div>
+      )}
+
       <div
         style={{
           display: "grid",
           gridTemplateColumns: "1.4fr 1fr",
           gap: 18,
-          alignItems: "start",
+          alignItems: "stretch",
         }}
       >
-        <div className="card" style={{ padding: 0, minWidth: 0, overflow: "hidden" }}>
-          <div
-            style={{
-              padding: "16px 20px 12px",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              borderBottom: "1px solid var(--bg-line)",
-            }}
-          >
-            <span style={{ fontWeight: 500 }}>Последние сессии</span>
-            <Link to="/sessions" className="btn btn--sm btn--ghost">
-              Вся история <Icon name="arrow-right" size={12} />
-            </Link>
-          </div>
-          {sessions.length === 0 ? (
-            <div
-              style={{
-                padding: "32px 20px",
-                textAlign: "center",
-                color: "var(--ink-3)",
-                fontSize: 13,
-              }}
-            >
-              Сессии появятся здесь после первого запуска
-            </div>
-          ) : (
-            sessions.slice(0, 6).map((s) => (
-              <Link
-                key={s.id}
-                to={
-                  s.status === "finished"
-                    ? `/sessions/${s.id}/report`
-                    : `/admin/sessions/${s.id}`
-                }
-                style={{
-                  padding: "12px 20px",
-                  display: "grid",
-                  gridTemplateColumns: "60px 1fr 140px 80px 110px",
-                  gap: 16,
-                  alignItems: "center",
-                  borderBottom: "1px solid var(--bg-line)",
-                  fontSize: 13,
-                  cursor: "pointer",
-                }}
-              >
-                <span className="mono" style={{ color: "var(--ink-3)" }}>
-                  #{s.id}
-                </span>
-                <div>
-                  <div style={{ fontWeight: 500 }}>
-                    {s.selected_topics.slice(0, 3).join(", ") || "—"}
-                  </div>
-                  <div style={{ fontSize: 11, color: "var(--ink-3)" }}>
-                    {s.mode} · {s.target_duration_min} мин
-                  </div>
-                </div>
-                <span
-                  className="mono"
-                  style={{ color: "var(--ink-3)", fontSize: 12 }}
-                >
-                  {new Date(s.created_at).toLocaleString("ru-RU", {
-                    day: "2-digit",
-                    month: "2-digit",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </span>
-                <span className="pill" style={{ background: "transparent" }}>
-                  {s.selected_level}
-                </span>
-                <StatusPill status={s.status} />
-              </Link>
-            ))
-          )}
-        </div>
-
         <div
           style={{
             display: "flex",
@@ -312,45 +374,27 @@ export default function Dashboard() {
             minWidth: 0,
           }}
         >
-          <div className="card">
-            <div className="card__label">Быстрые действия</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              <Link
-                to="/admin/assignments"
-                className="btn"
-                style={{ justifyContent: "flex-start", padding: 12 }}
-              >
-                <Icon name="tag" size={14} />
-                Назначить kick-off
-              </Link>
-              <Link
-                to="/upload"
-                className="btn"
-                style={{ justifyContent: "flex-start", padding: 12 }}
-              >
-                <Icon name="upload" size={14} />
-                Загрузить ТЗ
-              </Link>
-              <Link
-                to="/sessions"
-                className="btn"
-                style={{ justifyContent: "flex-start", padding: 12 }}
-              >
-                <Icon name="search" size={14} />
-                Найти сессию
-              </Link>
-              <Link
-                to="/analytics"
-                className="btn"
-                style={{ justifyContent: "flex-start", padding: 12 }}
-              >
-                <Icon name="chart" size={14} />
-                Аналитика
-              </Link>
-            </div>
-          </div>
+          <AssignmentsBlock assignments={assignments} />
+          <ReportsBlock finished={finishedReports} />
+        </div>
 
-          <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            minWidth: 0,
+          }}
+        >
+          <div
+            className="card"
+            style={{
+              padding: 0,
+              overflow: "hidden",
+              display: "flex",
+              flexDirection: "column",
+              flex: 1,
+            }}
+          >
             <div
               style={{
                 padding: "16px 20px 12px",
@@ -372,12 +416,17 @@ export default function Dashboard() {
                   textAlign: "center",
                   color: "var(--ink-3)",
                   fontSize: 13,
+                  flex: 1,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
                 }}
               >
                 Загрузите первый ТЗ
               </div>
             ) : (
-              projects.slice(0, 4).map((p) => (
+              <div style={{ flex: 1, overflow: "auto" }}>
+              {projects.slice(0, 10).map((p) => (
                 <Link
                   key={p.id}
                   to={`/requirements/${p.id}`}
@@ -446,40 +495,13 @@ export default function Dashboard() {
                     )}
                   </div>
                 </Link>
-              ))
+              ))}
+              </div>
             )}
           </div>
         </div>
       </div>
 
-      {lastFinished && (
-        <div className="card" style={{ marginTop: 18 }}>
-          <div className="card__label">Последний отчёт</div>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              gap: 12,
-            }}
-          >
-            <div>
-              <div style={{ fontWeight: 500, fontSize: 14 }}>
-                Сессия #{lastFinished.id} · {lastFinished.selected_level}
-              </div>
-              <div
-                className="mono"
-                style={{ fontSize: 11, color: "var(--ink-3)", marginTop: 4 }}
-              >
-                {new Date(lastFinished.created_at).toLocaleString("ru-RU")}
-              </div>
-            </div>
-            <Link to={`/sessions/${lastFinished.id}/report`} className="btn btn--sm">
-              Открыть отчёт <Icon name="arrow-right" size={12} />
-            </Link>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -520,8 +542,413 @@ function OnboardingWizard() {
           title="Получите отчёт"
           desc="Голосовое Q&A + лайв-кодинг. Эталонные ответы и слабые места — в отчёте."
           cta="После шага 2"
-          to="/analytics"
+          to="/admin/assignments"
         />
+      </div>
+    </div>
+  );
+}
+
+type FinishedReportRow = AssignmentSessionInfo & {
+  requirements_title: string;
+  user_email: string;
+  user_full_name: string;
+};
+
+function AssignmentsBlock({
+  assignments,
+}: {
+  assignments: AssignmentDetailOut[];
+}) {
+  return (
+    <div
+      className="card"
+      style={{
+        padding: 0,
+        minWidth: 0,
+        display: "flex",
+        flexDirection: "column",
+      }}
+    >
+      <div
+        style={{
+          padding: "16px 20px 12px",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          borderBottom: "1px solid var(--bg-line)",
+        }}
+      >
+        <span style={{ fontWeight: 500 }}>Назначения</span>
+        <Link to="/admin/assignments" className="btn btn--sm btn--ghost">
+          Все
+        </Link>
+      </div>
+      <div
+        style={{
+          padding: "10px 20px",
+          borderBottom: "1px solid var(--bg-line)",
+          display: "grid",
+          gridTemplateColumns: ASSIGNMENTS_GRID,
+          gap: 10,
+          alignItems: "center",
+          minWidth: 540,
+        }}
+      >
+        {["#", "ПРОЕКТ", "ПОЛЬЗОВАТЕЛЬ", "ДАТА", "ПОПЫТОК"].map((h) => (
+          <div key={h} className="mono upper" style={{ color: "var(--ink-3)" }}>
+            {h}
+          </div>
+        ))}
+      </div>
+      {assignments.length === 0 ? (
+        <div
+          style={{
+            padding: "32px 20px",
+            textAlign: "center",
+            color: "var(--ink-3)",
+            fontSize: 13,
+          }}
+        >
+          Назначений пока нет
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          {assignments.slice(0, 12).map((a) => (
+            <Link
+              key={a.id}
+              to="/admin/assignments"
+              style={{
+                padding: "12px 20px",
+                display: "grid",
+                gridTemplateColumns: ASSIGNMENTS_GRID,
+                gap: 10,
+                alignItems: "center",
+                borderBottom: "1px solid var(--bg-line)",
+                fontSize: 13,
+                cursor: "pointer",
+                minWidth: 540,
+              }}
+            >
+              <span className="mono" style={{ color: "var(--ink-3)" }}>
+                #{a.id}
+              </span>
+              <div
+                style={{
+                  fontWeight: 500,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+                title={a.requirements_title || ""}
+              >
+                {a.requirements_title || "—"}
+              </div>
+              <div
+                style={{
+                  minWidth: 0,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+                title={a.user_email || ""}
+              >
+                <div style={{ fontWeight: 500 }}>
+                  {a.user_full_name || a.user_email || "—"}
+                </div>
+                {a.user_full_name && a.user_email && (
+                  <div style={{ fontSize: 11, color: "var(--ink-3)" }}>
+                    {a.user_email}
+                  </div>
+                )}
+              </div>
+              <span
+                className="mono"
+                style={{ color: "var(--ink-3)", fontSize: 12 }}
+              >
+                {formatShortDate(a.created_at)}
+              </span>
+              <span
+                className="mono"
+                style={{ fontVariantNumeric: "tabular-nums", fontWeight: 500 }}
+              >
+                {a.attempts_count ?? 0}
+              </span>
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ReportsBlock({ finished }: { finished: FinishedReportRow[] }) {
+  return (
+    <div
+      className="card"
+      style={{
+        padding: 0,
+        minWidth: 0,
+        display: "flex",
+        flexDirection: "column",
+      }}
+    >
+      <div
+        style={{
+          padding: "16px 20px 12px",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          borderBottom: "1px solid var(--bg-line)",
+        }}
+      >
+        <span style={{ fontWeight: 500 }}>Отчёты</span>
+        <span className="mono" style={{ fontSize: 11, color: "var(--ink-3)" }}>
+          {finished.length}
+        </span>
+      </div>
+      <div
+        style={{
+          padding: "10px 20px",
+          borderBottom: "1px solid var(--bg-line)",
+          display: "grid",
+          gridTemplateColumns: REPORTS_GRID,
+          gap: 10,
+          alignItems: "center",
+          minWidth: 580,
+        }}
+      >
+        {["#", "ПРОЕКТ", "ПОЛЬЗОВАТЕЛЬ", "ДАТА", "SCORE", "ВЕРДИКТ"].map((h) => (
+          <div key={h} className="mono upper" style={{ color: "var(--ink-3)" }}>
+            {h}
+          </div>
+        ))}
+      </div>
+      {finished.length === 0 ? (
+        <div
+          style={{
+            padding: "32px 20px",
+            textAlign: "center",
+            color: "var(--ink-3)",
+            fontSize: 13,
+          }}
+        >
+          Отчёты появятся после первого завершённого интервью
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          {finished.map((s) => {
+            const verdict = s.final_verdict || "";
+            const verdictPill = verdict
+              ? `pill ${FINAL_VERDICT_PILL[verdict as FinalVerdict]}`
+              : "pill pill--accent";
+            const verdictLabel = verdict
+              ? FINAL_VERDICT_LABEL_RU[verdict as FinalVerdict]
+              : "Завершено";
+            return (
+              <Link
+                key={s.id}
+                to={`/admin/sessions/${s.id}`}
+                style={{
+                  padding: "12px 20px",
+                  display: "grid",
+                  gridTemplateColumns: REPORTS_GRID,
+                  gap: 10,
+                  alignItems: "center",
+                  borderBottom: "1px solid var(--bg-line)",
+                  fontSize: 13,
+                  cursor: "pointer",
+                  minWidth: 580,
+                }}
+              >
+                <span className="mono" style={{ color: "var(--ink-3)" }}>
+                  #{s.id}
+                </span>
+                <div
+                  style={{
+                    fontWeight: 500,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                  title={s.requirements_title || ""}
+                >
+                  {s.requirements_title || "—"}
+                </div>
+                <div
+                  style={{
+                    minWidth: 0,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                  title={s.user_email || ""}
+                >
+                  <div style={{ fontWeight: 500 }}>
+                    {s.user_full_name || s.user_email || "—"}
+                  </div>
+                  {s.user_full_name && s.user_email && (
+                    <div style={{ fontSize: 11, color: "var(--ink-3)" }}>
+                      {s.user_email}
+                    </div>
+                  )}
+                </div>
+                <span
+                  className="mono"
+                  style={{ color: "var(--ink-3)", fontSize: 12 }}
+                >
+                  {formatShortDate(s.finished_at ?? "")}
+                </span>
+                <span
+                  className="mono"
+                  style={{
+                    color: scoreColorDash(s.score_pct),
+                    fontVariantNumeric: "tabular-nums",
+                  }}
+                >
+                  {s.score_pct == null ? "—" : `${s.score_pct.toFixed(0)}%`}
+                </span>
+                <span className={verdictPill}>{verdictLabel}</span>
+              </Link>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const ASSIGNMENTS_GRID =
+  "40px minmax(120px, 1.4fr) minmax(120px, 1.1fr) 90px 80px";
+const REPORTS_GRID =
+  "40px minmax(120px, 1.3fr) minmax(120px, 1.1fr) 90px 60px 110px";
+
+function formatShortDate(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function scoreColorDash(pct: number | null | undefined): string {
+  if (pct == null) return "var(--ink-3)";
+  if (pct >= 70) return "var(--accent)";
+  if (pct >= 40) return "var(--warn-fg, var(--ink-2))";
+  return "var(--danger-fg)";
+}
+
+function TopicBars({
+  topics,
+  variant = "default",
+}: {
+  topics: TopicStat[];
+  variant?: "default" | "weak";
+}) {
+  return (
+    <div>
+      {topics.map((t) => {
+        const pct = Math.round(t.avg_score * 100);
+        const fillVariant =
+          variant === "weak"
+            ? "bar-row__fill--danger"
+            : pct >= 70
+              ? ""
+              : pct >= 40
+                ? "bar-row__fill--warn"
+                : "bar-row__fill--danger";
+        return (
+          <div key={t.topic} className="bar-row">
+            <div className="bar-row__label" title={t.topic}>
+              {t.topic}
+            </div>
+            <div className="bar-row__track">
+              <div
+                className={`bar-row__fill ${fillVariant}`}
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+            <div className="bar-row__num">
+              {pct}% · {t.answered}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function TrendChart({ trend }: { trend: TrendPoint[] }) {
+  const max = Math.max(1, ...trend.map((p) => p.sessions));
+  const totalSessions = trend.reduce((acc, p) => acc + p.sessions, 0);
+  if (totalSessions === 0) {
+    return (
+      <div style={{ fontSize: 13, color: "var(--ink-3)" }}>
+        Нет активности за последние 30 дней
+      </div>
+    );
+  }
+  return (
+    <div>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "flex-end",
+          gap: 4,
+          height: 140,
+        }}
+      >
+        {trend.map((p) => {
+          const h = (p.sessions / max) * 100;
+          const color =
+            p.sessions === 0
+              ? "var(--bg-3)"
+              : p.avg_score >= 0.7
+                ? "var(--accent)"
+                : p.avg_score >= 0.4
+                  ? "var(--warn)"
+                  : "var(--danger)";
+          return (
+            <div
+              key={p.date}
+              style={{
+                flex: 1,
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "flex-end",
+                height: "100%",
+              }}
+              title={`${p.date}: ${p.sessions} сессий, score ${(p.avg_score * 100).toFixed(0)}%`}
+            >
+              <div
+                style={{
+                  background: color,
+                  height: `${h}%`,
+                  minHeight: p.sessions ? 6 : 2,
+                  borderRadius: 3,
+                  opacity: 0.85,
+                }}
+              />
+            </div>
+          );
+        })}
+      </div>
+      <div
+        className="mono"
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          fontSize: 11,
+          color: "var(--ink-4)",
+          marginTop: 6,
+        }}
+      >
+        <span>{trend[0]?.date}</span>
+        <span>{trend[trend.length - 1]?.date}</span>
       </div>
     </div>
   );

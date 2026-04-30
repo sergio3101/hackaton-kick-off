@@ -15,7 +15,28 @@ export function verdictLabel(v: string | null | undefined): string {
   return VERDICT_LABEL_RU[v as Verdict] ?? v;
 }
 export type UserRole = "admin" | "user";
+// "published" deprecated после удаления механики публикации (апрель 2026):
+// в БД остаётся для legacy-записей, но сервер больше не выставляет этот статус.
 export type AssignmentStatus = "assigned" | "started" | "completed" | "published";
+
+// Категория готовности кандидата по итогам интервью. Заполняет LLM в
+// SessionSummary.final_verdict; пустая строка — нет вердикта (старая сессия
+// до миграции 0010 либо LLM не вернула значение).
+export type FinalVerdict = "ready" | "almost" | "needs_practice" | "not_ready";
+
+export const FINAL_VERDICT_LABEL_RU: Record<FinalVerdict, string> = {
+  ready: "Готов",
+  almost: "Почти готов",
+  needs_practice: "Нужна практика",
+  not_ready: "Не готов",
+};
+
+export const FINAL_VERDICT_PILL: Record<FinalVerdict, string> = {
+  ready: "pill--accent",
+  almost: "pill--info",
+  needs_practice: "pill--warn",
+  not_ready: "pill--danger",
+};
 
 export interface User {
   id: number;
@@ -24,6 +45,14 @@ export interface User {
   role: UserRole;
   is_active?: boolean;
   created_at: string;
+}
+
+export interface UserPatch {
+  email?: string;
+  full_name?: string;
+  password?: string;
+  role?: UserRole;
+  is_active?: boolean;
 }
 
 export interface AssignmentOut {
@@ -42,13 +71,20 @@ export interface AssignmentOut {
   created_at: string;
 }
 
+// Голоса OpenAI Realtime API (актуальный список — не совпадает с TTS-1).
+// Старые имена ('onyx'/'fable'/'nova') не поддерживаются — для уже
+// сохранённых assignment'ов backend упадёт на дефолтный 'alloy'.
 export const TTS_VOICES = [
   "alloy",
+  "ash",
+  "ballad",
+  "coral",
   "echo",
-  "fable",
-  "onyx",
-  "nova",
+  "sage",
   "shimmer",
+  "verse",
+  "marin",
+  "cedar",
 ] as const;
 export type TtsVoice = (typeof TTS_VOICES)[number];
 
@@ -60,12 +96,39 @@ export const LLM_MODELS = [
 ] as const;
 export type LlmModel = (typeof LLM_MODELS)[number];
 
+export interface AssignmentSessionInfo {
+  id: number;
+  status: SessionStatus;
+  started_at: string | null;
+  finished_at: string | null;
+  duration_sec: number | null;
+  score_pct: number | null;
+  total_cost_usd: number | null;
+  // Категория готовности по итогам сессии (см. SessionSummary.final_verdict).
+  // Пусто, если LLM не выдала вердикт или сессия незавершена.
+  final_verdict?: "" | FinalVerdict;
+  // Breakdown ответов из SessionSummary — для отображения «✓7 ~2 ✗1 –0».
+  // Все четыре нуля для незавершённых сессий.
+  correct?: number;
+  partial?: number;
+  incorrect?: number;
+  skipped?: number;
+}
+
 export interface AssignmentDetailOut extends AssignmentOut {
   user_email: string;
   user_full_name: string;
   requirements_title: string;
+  // Legacy alias of last_session_id (старые клиенты).
   session_id: number | null;
-  published_at: string | null;
+  last_session_id: number | null;
+  attempts_count: number;
+  // Срез последней (по created_at) попытки — back-compat алиас sessions[-1].
+  session: AssignmentSessionInfo | null;
+  // Все попытки прохождения, отсортированные по возрастанию created_at.
+  sessions: AssignmentSessionInfo[];
+  // deprecated: публикация отчётов админом удалена; сервер всегда отдаёт null.
+  published_at?: string | null;
 }
 
 export interface TokenOut {
@@ -118,7 +181,10 @@ export type SessionMode = "voice" | "text";
 export interface SessionOut {
   id: number;
   user_id?: number;
+  user_email?: string;
+  user_full_name?: string;
   requirements_id: number;
+  requirements_title?: string;
   selected_topics: string[];
   selected_level: Level;
   status: SessionStatus;
@@ -151,6 +217,8 @@ export interface SummaryOut {
   incorrect: number;
   skipped: number;
   overall: string;
+  final_verdict: "" | FinalVerdict;
+  final_recommendation: string;
 }
 
 export interface ReportOut {
@@ -158,6 +226,7 @@ export interface ReportOut {
   summary: SummaryOut | null;
   items: SessionItem[];
   total_cost_usd: number;
+  requirements_title: string;
 }
 
 export interface TopicStat {

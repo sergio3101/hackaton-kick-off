@@ -6,16 +6,16 @@ import Layout from "./components/Layout";
 import AdminAssignments from "./pages/AdminAssignments";
 import AdminSessionReview from "./pages/AdminSessionReview";
 import AdminUsers from "./pages/AdminUsers";
-import Analytics from "./pages/Analytics";
 import Dashboard from "./pages/Dashboard";
+import Docs from "./pages/Docs";
 import Interview from "./pages/Interview";
 import Login from "./pages/Login";
 import MyAssignments from "./pages/MyAssignments";
+import MyStats from "./pages/MyStats";
 import Projects from "./pages/Projects";
 import Register from "./pages/Register";
 import Report from "./pages/Report";
 import RequirementsDetail from "./pages/RequirementsDetail";
-import Sessions from "./pages/Sessions";
 import Upload from "./pages/Upload";
 
 function Private({ children }: { children: JSX.Element }) {
@@ -43,6 +43,18 @@ function UserOnlyInterview() {
     return <Navigate to={`/admin/sessions/${id}`} replace />;
   }
   return <Interview />;
+}
+
+// Старая страница /sessions удалена; редирект ведёт в раздел назначений
+// согласно роли: админ — в админский список, пользователь — в свои кикоффы.
+function HistoryRedirect() {
+  const { user } = useAuth();
+  return (
+    <Navigate
+      to={user?.role === "admin" ? "/admin/assignments" : "/me/assignments"}
+      replace
+    />
+  );
 }
 
 export default function App() {
@@ -90,17 +102,8 @@ function AppRoutes() {
             </AdminOnly>
           }
         />
-        <Route path="/sessions" element={<Sessions />} />
         <Route path="/sessions/:id/interview" element={<UserOnlyInterview />} />
         <Route path="/sessions/:id/report" element={<Report />} />
-        <Route
-          path="/analytics"
-          element={
-            <AdminOnly>
-              <Analytics />
-            </AdminOnly>
-          }
-        />
         <Route
           path="/admin/users"
           element={
@@ -126,8 +129,12 @@ function AppRoutes() {
           }
         />
         <Route path="/me/assignments" element={<MyAssignments />} />
-        {/* Legacy redirect-friendly aliases */}
-        <Route path="/history" element={<Sessions />} />
+        <Route path="/me/stats" element={<MyStats />} />
+        <Route path="/docs" element={<Docs />} />
+        {/* Legacy aliases — старые ссылки на /sessions / /history теперь
+           ведут в раздел назначений (история и назначения объединены). */}
+        <Route path="/sessions" element={<HistoryRedirect />} />
+        <Route path="/history" element={<HistoryRedirect />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

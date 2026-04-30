@@ -20,10 +20,12 @@ export default function Layout() {
   const location = useLocation();
   const isAdmin = user?.role === "admin";
 
+  // Иерархия данных: Проект → Назначение → Сессия (1:n, история попыток) → Отчёт.
+  // У админа в сайдбаре одна точка входа в работу с прохождениями — «Назначения»
+  // (см. AdminAssignments): из неё раскрываются все попытки и отчёты по каждой.
+  // Отдельной страницы «Сессии» намеренно нет.
   const adminItems: NavItem[] = [
     { to: "/", label: "Дашборд", icon: "dashboard", end: true },
-    { to: "/sessions", label: "История сессий", icon: "history" },
-    { to: "/analytics", label: "Аналитика", icon: "chart" },
   ];
 
   const adminAdminSection: NavItem[] = [
@@ -33,9 +35,17 @@ export default function Layout() {
     { to: "/upload", label: "Загрузить ТЗ", icon: "upload" },
   ];
 
+  // У пользователя один раздел «Мои кикоффы»: там видно и предстоящие, и
+  // завершённые с опубликованным отчётом. Отдельной страницы /sessions больше
+  // нет — её роль покрывает MyAssignments.
   const userItems: NavItem[] = [
+    { to: "/me/stats", label: "Статистика", icon: "chart" },
     { to: "/me/assignments", label: "Мои кикоффы", icon: "play" },
-    { to: "/sessions", label: "Мои отчёты", icon: "doc" },
+  ];
+
+  // Раздел «Поддержка» — общий для admin и user.
+  const supportItems: NavItem[] = [
+    { to: "/docs", label: "Документация", icon: "doc" },
   ];
 
   const initials = useMemo(() => {
@@ -50,21 +60,25 @@ export default function Layout() {
   const crumbs = useMemo(() => {
     const path = location.pathname;
     if (path === "/") return ["Рабочая область", "Дашборд"];
-    if (path === "/projects") return ["Проекты"];
-    if (path === "/upload") return ["Загрузить ТЗ"];
-    if (path.startsWith("/requirements/")) return ["Проекты", "Требования"];
+    if (path === "/projects") return ["Администрирование", "Проекты"];
+    if (path === "/upload") return ["Администрирование", "Загрузить ТЗ"];
+    if (path.startsWith("/requirements/"))
+      return ["Администрирование", "Проекты", "Проект"];
     if (path.startsWith("/sessions/") && path.endsWith("/interview"))
-      return ["Сессии", "В эфире"];
+      return ["Мои кикоффы", "Сессия", "В эфире"];
     if (path.startsWith("/sessions/") && path.endsWith("/report"))
-      return ["Сессии", "Отчёт"];
-    if (path === "/sessions") return ["История сессий"];
-    if (path === "/analytics") return ["Аналитика"];
-    if (path === "/admin/users") return ["Пользователи"];
-    if (path === "/admin/assignments") return ["Назначения"];
-    if (path.startsWith("/admin/sessions/")) return ["Сессии", "Ревью"];
-    if (path === "/me/assignments") return ["Мои кикоффы"];
+      return isAdmin
+        ? ["Администрирование", "Отчёт сессии"]
+        : ["Мои кикоффы", "Отчёт сессии"];
+    if (path === "/admin/users") return ["Администрирование", "Пользователи"];
+    if (path === "/admin/assignments") return ["Администрирование", "Назначения"];
+    if (path.startsWith("/admin/sessions/"))
+      return ["Администрирование", "Назначения", "Отчёт сессии"];
+    if (path === "/me/assignments") return ["Рабочая область", "Мои кикоффы"];
+    if (path === "/me/stats") return ["Рабочая область", "Статистика"];
+    if (path === "/docs") return ["Поддержка", "Документация"];
     return ["Kick-off Prep"];
-  }, [location.pathname]);
+  }, [location.pathname, isAdmin]);
 
   const linkCls = ({ isActive }: { isActive: boolean }) =>
     `nav-item ${isActive ? "active" : ""}`;
@@ -108,6 +122,16 @@ export default function Layout() {
             ))}
           </>
         )}
+
+        <div className="sidebar__section">Поддержка</div>
+        {supportItems.map((it) => (
+          <NavLink key={it.to} to={it.to} className={linkCls}>
+            <span className="nav-item__icon">
+              <Icon name={it.icon} size={16} />
+            </span>
+            <span>{it.label}</span>
+          </NavLink>
+        ))}
 
         <div className="sidebar__footer">
           <div className="user-chip">

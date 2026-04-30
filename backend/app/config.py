@@ -12,6 +12,11 @@ class Settings(BaseSettings):
     openai_stt_model: str = Field(default="whisper-1", alias="OPENAI_STT_MODEL")
     openai_tts_model: str = Field(default="tts-1", alias="OPENAI_TTS_MODEL")
     openai_tts_voice: str = Field(default="alloy", alias="OPENAI_TTS_VOICE")
+    openai_realtime_model: str = Field(
+        default="gpt-4o-realtime-preview-2024-12-17",
+        alias="OPENAI_REALTIME_MODEL",
+    )
+    voice_realtime_enabled: bool = Field(default=True, alias="VOICE_REALTIME_ENABLED")
 
     postgres_user: str = Field(default="kickoff", alias="POSTGRES_USER")
     postgres_password: str = Field(default="kickoff", alias="POSTGRES_PASSWORD")

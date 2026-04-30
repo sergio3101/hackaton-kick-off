@@ -1,13 +1,20 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link, useParams } from "react-router-dom";
+import { Link, Navigate, useParams } from "react-router-dom";
 
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthProvider";
 import Icon from "../components/Icon";
 import { Kpi } from "../components/UI";
 import { PasteBadge } from "../features/coding/PasteBadge";
-import { VERDICT_LABEL_RU, type ReportOut, type Verdict } from "../api/types";
+import {
+  FINAL_VERDICT_LABEL_RU,
+  FINAL_VERDICT_PILL,
+  VERDICT_LABEL_RU,
+  type FinalVerdict,
+  type ReportOut,
+  type Verdict,
+} from "../api/types";
 
 const VERDICT_PILL: Record<Verdict, string> = {
   correct: "pill--accent",
@@ -27,14 +34,20 @@ export default function Report() {
   const [pdfError, setPdfError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("summary");
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ["report", sessionId],
     queryFn: async () =>
       (await api.get<ReportOut>(`/api/sessions/${sessionId}/report`)).data,
-    enabled: Number.isFinite(sessionId),
+    // Не дёргаем user-эндпоинт под админом — он сразу будет редиректнут ниже.
+    enabled: Number.isFinite(sessionId) && !isAdmin,
     retry: false,
   });
-  const status = (error as any)?.response?.status;
+
+  // Симметрично UserOnlyInterview: админ всегда смотрит отчёт через
+  // /admin/sessions/:id (со своими кнопками и контролами), не через user-роут.
+  if (isAdmin) {
+    return <Navigate to={`/admin/sessions/${sessionId}`} replace />;
+  }
 
   async function downloadPdf() {
     setDownloadingPdf(true);
@@ -73,28 +86,6 @@ export default function Report() {
     );
   }
 
-  if (status === 403) {
-    return (
-      <div className="page">
-        <div className="page-head">
-          <div>
-            <div className="mono upper" style={{ color: "var(--warn)", marginBottom: 8 }}>
-              ОТЧЁТ В ПРОЦЕССЕ ПУБЛИКАЦИИ
-            </div>
-            <h1 className="page-title">Отчёт ещё не опубликован</h1>
-            <div className="page-sub" style={{ maxWidth: 520 }}>
-              Спасибо, ответы записаны. Администратор просмотрит результаты и опубликует
-              отчёт — после этого вы увидите его в разделе «Мои кикоффы».
-            </div>
-          </div>
-        </div>
-        <Link to="/me/assignments" className="btn btn--primary">
-          <Icon name="arrow-right" size={14} /> К моим кикоффам
-        </Link>
-      </div>
-    );
-  }
-
   if (!data) {
     return (
       <div className="page">
@@ -102,7 +93,7 @@ export default function Report() {
           Отчёт недоступен.
           <div style={{ marginTop: 12 }}>
             <Link
-              to={isAdmin ? "/sessions" : "/me/assignments"}
+              to={isAdmin ? "/admin/assignments" : "/me/assignments"}
               className="btn btn--sm"
             >
               ← Назад
@@ -139,7 +130,23 @@ export default function Report() {
           >
             HISTORY · SESSION #{data.session.id} · REPORT
           </div>
-          <h1 className="page-title">Отчёт по интервью #{data.session.id}</h1>
+          <h1 className="page-title" style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <span>Отчёт по интервью #{data.session.id}</span>
+            <FinalVerdictBadge verdict={data.summary?.final_verdict} />
+          </h1>
+          {data.requirements_title && (
+            <div
+              style={{
+                fontSize: 14,
+                color: "var(--ink-2)",
+                marginTop: 4,
+                marginBottom: 6,
+              }}
+            >
+              <Icon name="kanban" size={13} />{" "}
+              <span style={{ fontWeight: 500 }}>{data.requirements_title}</span>
+            </div>
+          )}
           <div className="page-sub">
             {new Date(data.session.created_at).toLocaleString("ru-RU")} · уровень{" "}
             <span className="mono" style={{ color: "var(--accent)" }}>
@@ -289,6 +296,11 @@ export default function Report() {
           >
             {summary.overall || "Резюме не сформировано"}
           </div>
+          {summary.final_recommendation && (
+            <ReportBlock label="Рекомендация" variant="accent">
+              {summary.final_recommendation}
+            </ReportBlock>
+          )}
           <div
             style={{
               marginTop: 18,
@@ -494,6 +506,19 @@ export default function Report() {
         </div>
       )}
     </div>
+  );
+}
+
+function FinalVerdictBadge({ verdict }: { verdict: "" | FinalVerdict | undefined }) {
+  if (!verdict) return null;
+  const cls = FINAL_VERDICT_PILL[verdict];
+  return (
+    <span
+      className={`pill ${cls}`}
+      style={{ fontSize: 13, padding: "4px 12px" }}
+    >
+      {FINAL_VERDICT_LABEL_RU[verdict]}
+    </span>
   );
 }
 

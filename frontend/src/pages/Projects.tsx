@@ -166,7 +166,7 @@ export default function Projects() {
                   Открыть
                 </Link>
                 <Link
-                  to="/admin/assignments"
+                  to={`/admin/assignments?new=1&requirements_id=${r.id}`}
                   className="btn btn--primary btn--sm"
                   style={{ flex: 1, justifyContent: "center" }}
                 >

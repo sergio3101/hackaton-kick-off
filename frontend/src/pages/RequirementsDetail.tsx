@@ -216,7 +216,10 @@ export default function RequirementsDetail() {
           >
             <Icon name="trash" size={13} /> Удалить
           </button>
-          <Link to="/admin/assignments" className="btn btn--primary">
+          <Link
+            to={`/admin/assignments?new=1&requirements_id=${id}`}
+            className="btn btn--primary"
+          >
             <Icon name="tag" size={13} /> Назначить пользователю
           </Link>
         </div>

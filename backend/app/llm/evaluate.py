@@ -36,6 +36,16 @@ class CodeReview:
     explanation: str
 
 
+@dataclass(slots=True)
+class OverallSummary:
+    overall: str
+    final_verdict: str  # "" если LLM прислал что-то вне допустимого enum'а
+    final_recommendation: str
+
+
+_FINAL_VERDICT_VALUES = frozenset({"ready", "almost", "needs_practice", "not_ready"})
+
+
 def evaluate_voice_answer(
     *,
     summary: str,
@@ -141,7 +151,7 @@ def make_overall_summary(
     session_id: int | None = None,
     db: Session | None = None,
     model: str | None = None,
-) -> str:
+) -> OverallSummary:
     settings = get_settings()
     chat_model = model or settings.openai_chat_model
     client = get_openai()
@@ -159,4 +169,11 @@ def make_overall_summary(
         response=response, session_id=session_id, db=db,
     )
     payload = safe_json_loads(response.choices[0].message.content, kind="evaluate")
-    return payload.get("overall", "")
+    verdict = payload.get("final_verdict", "")
+    if verdict not in _FINAL_VERDICT_VALUES:
+        verdict = ""
+    return OverallSummary(
+        overall=payload.get("overall", "") or "",
+        final_verdict=verdict,
+        final_recommendation=payload.get("final_recommendation", "") or "",
+    )
